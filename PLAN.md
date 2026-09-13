@@ -1,4 +1,8 @@
-# Approved stage 1 — local-only collector
+# Historical stage 1 plan — local-only collector
+
+Superseded for publication: the owner approved public client source and a manual
+Windows candidate build. Website/private infrastructure and real logs remain excluded.
+No GitHub Release until the native artifact is tested.
 
 Scope: independent Python standard-library collector, SQLite bounded offline queue,
 UTF-8 combat parser, foreground Tk Windows GUI, synthetic tests and privacy/protocol docs.

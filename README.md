@@ -1,6 +1,6 @@
 # SPHOL foreground combat-log collector
 
-**HTTPS client implemented; no Windows binary released, native GUI/build and deployed end-to-end flow not yet verified.** Public client source is separate from the private website. Publication/release remain held for owner review.
+**HTTPS client implemented; no Windows binary released, native GUI/build and deployed end-to-end flow not yet verified.** Public client source is separate from the private website. This is an unsigned testing candidate, not a production release.
 
 ## Use on Windows
 Python 3.11+ with Tk: `python run_collector.py`. No administrator, installation, startup entry, service, tray, memory access or injection. Open during your sortie and close afterwards.
@@ -22,6 +22,6 @@ Known boundaries: timestamps have second precision; the starting fractional seco
 ## Verification and portable build
 `python -m unittest discover -s tests -v` uses synthetic temporary logs and mocked HTTPS responses; no production requests. Native DPAPI round-trip/tamper test runs only on Windows. Callback tests are not native GUI tests.
 
-`.github/workflows/windows-build.yml` is manual-only, Windows 2022 + Python 3.11.9, full action SHA pins verified against upstream tags, version-pinned build-only dependencies. It tests, builds a PyInstaller one-file/windowed EXE, and writes SHA256/source-commit files. **No artifact upload or release/push occurs.** Run the workflow after approved source publication; it has not run here. Dependency wheel hash locking, signing/attestation and manual native UI/rotation/exit/E2E failure checks are still release gates. PyInstaller extracts into a temporary directory; portable does not mean no disk writes. Runtime uses only the Python standard library.
+`.github/workflows/windows-build.yml` is manual-only, Windows 2022 + Python 3.11.9 x64, full action SHA pins verified against upstream tags, and hash-locked build-only dependencies installed with `--require-hashes --only-binary=:all:`. It tests, builds a PyInstaller one-file/windowed EXE, writes SHA256/source-commit files, and uploads those three files as a 14-day Actions candidate artifact named with the source commit. **No GitHub Release, signature or attestation is produced.** Check the actual workflow run before assuming a build succeeded. The checksum detects byte changes; the commit text is a build reference, not cryptographic provenance or a safety guarantee. Manual native UI/rotation/exit and end-to-end failure checks remain release gates. PyInstaller extracts into a temporary directory; portable does not mean no disk writes. Runtime uses only the Python standard library.
 
 See [privacy](docs/PRIVACY.md), [protocol](docs/PROTOCOL.md), and the normative [implementation contract](docs/IMPLEMENTATION-CONTRACT.md). Do not include real logs, credentials or private website files in public issues/source.
