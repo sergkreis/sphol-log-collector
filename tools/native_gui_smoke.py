@@ -9,12 +9,15 @@ from pathlib import Path
 import socket
 import sqlite3
 import tempfile
+import threading
 import tkinter as tk
+
 import unittest
 from unittest.mock import patch
 
 from collector.core import PendingQueue
 from collector.network_gui import ConnectedApp
+from collector.transport import Pairing
 
 
 class NativeGuiSmoke(unittest.TestCase):
@@ -38,6 +41,41 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertIn('NOT CONNECTED', app.connection.cget('text'))
                     self.assertFalse(app.upload_enabled)
                     self.assertIsNone(app.uploader)
+                    self.assertNotIn('server integration is not available', app.status.get())
+                    self.assertEqual(app.code_field.get(), '')
+                    self.assertTrue(app.copy_button.instate(['disabled']))
+                    self.assertTrue(app.code_field.instate(['readonly']))
+                    window.clipboard_clear()
+                    window.clipboard_append('synthetic previous clipboard')
+                    pairing = Pairing()
+                    pairing.deadline = float('inf')
+                    app.pairing = pairing
+                    app.results.put(('pair', 'TEST-1234', None))
+                    with patch.object(app, 'work'), patch('collector.network_gui.webbrowser.open'):
+                        app.network_tick()
+                    self.assertEqual(window.clipboard_get(), 'synthetic previous clipboard')
+                    self.assertEqual(app.code_field.get(), 'TEST-1234')
+                    app.code_field.selection_range(0, 'end')
+                    self.assertTrue(app.code_field.selection_present())
+                    app.code_field.insert(0, 'cannot edit')
+                    self.assertEqual(app.code_field.get(), 'TEST-1234')
+                    callback_threads = []
+                    original_append = window.clipboard_append
+                    def record_append(value):
+                        callback_threads.append(threading.get_ident())
+                        original_append(value)
+                    with patch.object(window, 'clipboard_append', side_effect=record_append):
+                        app.copy_button.invoke()
+                    self.assertEqual(callback_threads, [threading.get_ident()])
+                    self.assertEqual(window.clipboard_get(), app.code_field.get())
+                    self.assertEqual(app.copy_feedback.cget('text'), 'Код скопирован')
+                    pairing.deadline = 0
+                    with patch.object(app, 'work'):
+                        app.network_tick()
+                    self.assertEqual(app.code_field.get(), '')
+                    self.assertTrue(app.copy_button.instate(['disabled']))
+                    self.assertEqual(window.clipboard_get(), 'TEST-1234')
+                    app.pairing = None
 
                     def button(text):
                         def descendants(widget):

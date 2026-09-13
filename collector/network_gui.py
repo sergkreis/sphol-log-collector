@@ -1,9 +1,10 @@
 """Foreground network UI; worker never touches Tk or SQLite."""
 import queue as messages
 import threading
+import time
 import webbrowser
 from tkinter import ttk, messagebox
-from .gui import App
+from .gui import App, tk
 from .credentials import CredentialStore
 from .transport import Pairing, Uploader, PAIR_URI
 
@@ -28,9 +29,22 @@ class ConnectedApp(App):
         self.store = CredentialStore(queue.path.parent / 'credentials.dpapi')
         super().__init__(window, log_root, queue)
         window.title('SPHOL — combat collector')
-        window.geometry('700x500')
+        window.geometry('700x580')
+        self.status.set('Stopped. Capture is local; pairing and upload status are shown below.')
         self.connection = ttk.Label(window, text='NOT CONNECTED — pair explicitly to enable HTTPS uploads.', wraplength=650)
         self.connection.pack(padx=20)
+        code_frame = ttk.Frame(window)
+        code_frame.pack(padx=20, pady=8)
+        ttk.Label(code_frame, text='Код привязки:').pack(side='left', padx=8)
+        self.pairing_code = tk.StringVar(master=window, value='')
+        self.code_field = ttk.Entry(code_frame, textvariable=self.pairing_code,
+                                    state='readonly', width=34, exportselection=False)
+        self.code_field.pack(side='left')
+        self.copy_button = ttk.Button(code_frame, text='Скопировать код',
+                                      command=self.copy_pairing_code, state='disabled')
+        self.copy_button.pack(side='left', padx=8)
+        self.copy_feedback = ttk.Label(window, text='')
+        self.copy_feedback.pack()
         buttons = ttk.Frame(window)
         buttons.pack(pady=10)
         ttk.Button(buttons, text='Pair with SPHOL', command=self.pair).pack(side='left')
@@ -44,6 +58,28 @@ class ConnectedApp(App):
         except Exception:
             self.connection.config(text='NOT CONNECTED — stored credentials unavailable/expired. Unpair then pair again.')
         window.after(250, self.network_tick)
+
+    def clear_pairing_code(self):
+        # Only clear our UI: never overwrite the user's clipboard automatically.
+        self.pairing_code.set('')
+        self.copy_button.config(state='disabled')
+        self.copy_feedback.config(text='')
+
+    def copy_pairing_code(self):
+        # Invoked by Tk on the main thread, never by the network worker.
+        if not self.pairing or time.monotonic() >= self.pairing.deadline:
+            self.clear_pairing_code()
+            return
+        code = self.pairing_code.get()
+        if not code:
+            return
+        try:
+            self.window.clipboard_clear()
+            self.window.clipboard_append(code)
+        except tk.TclError:
+            self.copy_feedback.config(text='Не удалось скопировать. Выделите код и нажмите Ctrl+C.')
+        else:
+            self.copy_feedback.config(text='Код скопирован')
 
     def show_identity(self):
         c = self.uploader.credentials
@@ -103,6 +139,7 @@ class ConnectedApp(App):
         self.store.clear()
         self.queue.clear()
         self.uploader = self.pairing = None
+        self.clear_pairing_code()
         self.connection.config(text='NOT CONNECTED — local credential removed. Website revocation is separate.')
 
     def network_tick(self):
@@ -115,11 +152,16 @@ class ConnectedApp(App):
             if error:
                 self.upload_enabled = False
                 self.pairing = None
+                self.clear_pairing_code()
                 self.connection.config(text='NOT CONNECTED / request failed (' + error + '); pending retained. No success assumed.')
             elif kind == 'pair':
-                self.connection.config(text='Enter this code on sphol.com and approve: ' + result)
+                self.pairing_code.set(result)
+                self.copy_button.config(state='normal')
+                self.copy_feedback.config(text='')
+                self.connection.config(text='Введите код на sphol.com и подтвердите привязку.')
                 webbrowser.open(PAIR_URI)
             elif kind == 'token' and result:
+                self.clear_pairing_code()
                 try:
                     self.store.save(result)
                     self.uploader = Uploader(result)
@@ -132,6 +174,8 @@ class ConnectedApp(App):
                 self.queue.acknowledge(snapshot.accepted)
                 if status:
                     self.connection.config(text=status)
+        if self.pairing_code.get() and (not self.pairing or time.monotonic() >= self.pairing.deadline):
+            self.clear_pairing_code()
         if not self.busy:
             if self.pairing:
                 self.work('token', self.pairing.poll)
