@@ -209,7 +209,7 @@ class Uploader:
             validate_credentials(self.credentials)
             payload = build_batch(queue, self.credentials)
             if not payload['events']:
-                return 'No approved-character events ready; other events stay pending.'
+                return 'Нет событий привязанного персонажа; остальные остаются в очереди.'
             status, data = self.http.post('/api/collector/v1/events', payload, self.credentials['access_token'])
             if status != 200:
                 raise HTTPFailure(status)
@@ -218,8 +218,8 @@ class Uploader:
             self.failures = 0
             if rejected:
                 self.paused = True
-                return f'Server rejected {len(rejected)} events; retained. Upload paused.'
-            return f'Confirmed durable upload: {len(accepted)} events at {datetime.now(timezone.utc).strftime("%H:%M:%S UTC")}.'
+                return f'Сервер отклонил события: {len(rejected)}. Они сохранены; отправка приостановлена.'
+            return f'Сервер подтвердил сохранение: {len(accepted)} событий.'
         except (OSError, http.client.HTTPException, HTTPFailure) as error:
             if isinstance(error, HTTPFailure) and error.status != 429 and error.status < 500:
                 self.paused = True
@@ -229,7 +229,7 @@ class Uploader:
             if isinstance(error, HTTPFailure):
                 delay = max(delay, error.retry_after)
             self.next_try = time.monotonic() + delay
-            return 'Network/server unavailable; pending retained, retry scheduled.'
+            return 'Сеть или сервер недоступны; очередь сохранена, повтор запланирован.'
         except ProtocolError:
             self.paused = True
             raise

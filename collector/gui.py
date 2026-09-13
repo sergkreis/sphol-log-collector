@@ -1,4 +1,4 @@
-"""Foreground GUI: no network, no service, no tray, no auto-start."""
+"""Foreground local capture; native controls, no background service."""
 import ctypes
 import os
 from pathlib import Path
@@ -9,14 +9,13 @@ from .core import PendingQueue, Tailer, QueueFull
 
 def documents():
     if os.name != 'nt':
-        raise OSError('This GUI targets Windows; core tests run cross-platform')
-    # Windows Documents known folder (includes OneDrive / redirected Documents).
+        raise OSError('Приложение предназначено для Windows')
     import uuid
     guid = (ctypes.c_ubyte * 16).from_buffer_copy(uuid.UUID('FDD39AD0-238F-46AF-ADB4-6C85480369C7').bytes_le)
     result = ctypes.c_wchar_p()
     hr = ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(result))
     if hr != 0:
-        raise OSError('Cannot locate Windows Documents')
+        raise OSError('Не удалось найти папку «Документы»')
     try:
         return Path(result.value)
     finally:
@@ -27,57 +26,75 @@ class App:
     def __init__(self, window, log_root, queue):
         self.window, self.log_root, self.queue = window, log_root, queue
         self.tailer = None
-        window.title('SPHOL — combat log collector (preview)')
-        window.geometry('650x330')
-        self.status = tk.StringVar(value='Stopped. NOT CONNECTED — server integration is not available.')
+        window.title('SPHOL — сбор боевых журналов')
+        window.minsize(680, 540)
+        self.status = tk.StringVar(value='Сбор выключен — новые события не читаются.')
         self.pending = tk.StringVar()
-        frame = ttk.Frame(window, padding=20)
+        self.frame = frame = ttk.Frame(window, padding=20)
         frame.pack(fill='both', expand=True)
-        ttk.Label(frame, text='Foreground combat capture • Explicit upload consent', font=('', 14)).pack(anchor='w')
-        ttk.Label(frame, text=str(log_root), wraplength=600).pack(anchor='w', pady=10)
-        ttk.Label(frame, text='Reads new combat lines only. No Chatlogs, memory, passwords or background service.', wraplength=600).pack(anchor='w')
-        ttk.Label(frame, textvariable=self.status, wraplength=600).pack(anchor='w', pady=15)
-        ttk.Label(frame, textvariable=self.pending).pack(anchor='w')
-        buttons = ttk.Frame(frame)
-        buttons.pack(anchor='w', pady=15)
-        ttk.Button(buttons, text='Start capture', command=self.start).pack(side='left')
-        ttk.Button(buttons, text='Stop capture', command=self.stop).pack(side='left', padx=8)
-        ttk.Button(buttons, text='Delete pending', command=self.clear).pack(side='left')
+        ttk.Label(frame, text='SPHOL · Боевые журналы', font=('Segoe UI', 16, 'bold')).pack(anchor='w')
+        self.identity_area = ttk.Frame(frame)
+        self.identity_area.pack(fill='x', pady=(12, 16))
+        capture = ttk.LabelFrame(frame, text='Локальный сбор', padding=12)
+        capture.pack(fill='x')
+        ttk.Label(capture, textvariable=self.status, wraplength=620).pack(anchor='w')
+        ttk.Label(capture, textvariable=self.pending).pack(anchor='w', pady=(6, 0))
+        buttons = ttk.Frame(capture)
+        buttons.pack(anchor='w', pady=(12, 0))
+        self.start_button = ttk.Button(buttons, text='Начать сбор', command=self.start)
+        self.start_button.pack(side='left')
+        self.stop_button = ttk.Button(buttons, text='Остановить сбор и отправку', command=self.stop, state='disabled')
+        self.stop_button.pack(side='left', padx=8)
+        ttk.Button(buttons, text='Удалить очередь…', command=self.clear).pack(side='left')
+        self.network_area = ttk.Frame(frame)
+        self.network_area.pack(fill='x', pady=(16, 12))
+        ttk.Separator(frame).pack(fill='x', pady=(4, 10))
+        ttk.Label(frame, text='Папка боевых журналов:', font=('Segoe UI', 9, 'bold')).pack(anchor='w')
+        ttk.Label(frame, text=str(log_root), wraplength=620).pack(anchor='w', pady=(4, 8))
+        ttk.Label(frame, text='Только новые боевые строки. Без чатов, памяти игры, паролей и фоновой службы. Отправка — только по вашему разрешению.', wraplength=620).pack(anchor='w')
         window.protocol('WM_DELETE_WINDOW', self.close)
         self.tick()
+
+    def capture_controls(self):
+        self.start_button.config(state='disabled' if self.tailer else 'normal')
+        self.stop_button.config(state='normal' if self.tailer or getattr(self, 'upload_enabled', False) else 'disabled')
 
     def start(self):
         if self.tailer is not None:
             return
         try:
             self.tailer = Tailer(self.log_root, self.queue)
-            self.status.set('Capturing locally. NOT CONNECTED — nothing uploaded.')
-        except (OSError, ValueError) as error:
-            self.status.set('Cannot start: ' + str(error))
+            self.status.set('Сбор включён — читаются новые боевые события.')
+        except (OSError, ValueError):
+            self.status.set('Сбор выключен — проверьте доступ к папке журналов.')
+        self.capture_controls()
 
     def stop(self):
         self.tailer = None
-        self.status.set('Stopped. NOT CONNECTED — pending data remains on this computer.')
+        self.status.set('Сбор выключен — очередь сохранена на компьютере.')
+        self.capture_controls()
 
     def clear(self):
-        if messagebox.askyesno('Delete pending?', 'Permanently delete all queued events? Stop capture first to avoid recapturing a blocked event.'):
+        if messagebox.askyesno('Удалить очередь?', 'Безвозвратно удалить все ожидающие события? Сбор и отправка будут остановлены.'):
             self.stop()
             self.queue.clear()
+            self.pending.set('В очереди на компьютере: 0 событий')
 
     def tick(self):
         if self.tailer:
             try:
                 self.tailer.poll()
+                self.status.set('Сбор включён — читаются новые боевые события.')
             except QueueFull:
-                self.status.set('QUEUE FULL — capture paused, not uploaded. Stop or delete pending.')
-            except Exception as error:
+                self.status.set('Сбор приостановлен: очередь заполнена. Эти данные ещё не отправлены.')
+            except Exception:
                 self.stop()
-                self.status.set('Capture stopped after local error: ' + type(error).__name__)
-        self.pending.set(f'Pending on disk: {self.queue.count()} events')
+                self.status.set('Сбор выключен после ошибки чтения. Проверьте папку журналов.')
+        self.pending.set(f'В очереди на компьютере: {self.queue.count()} событий')
         self.window.after(1000, self.tick)
 
     def close(self):
-        if self.queue.count() and not messagebox.askyesno('Unsent events', 'Pending events have NOT been uploaded. Keep them on disk and exit? No background process will remain.'):
+        if self.queue.count() and not messagebox.askyesno('Есть неотправленные события', 'Сохранить очередь на диске и выйти? Эти события ещё не отправлены. Фоновый процесс не останется.'):
             return
         self.tailer = None
         self.queue.close()
@@ -91,8 +108,8 @@ def main():
         state = Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector' / 'pending.sqlite3'
         from .network_gui import ConnectedApp
         ConnectedApp(window, root, PendingQueue(state))
-    except Exception as error:
-        messagebox.showerror('Cannot open collector', str(error))
+    except Exception:
+        messagebox.showerror('Не удалось открыть сборщик', 'Проверьте доступ к папке журналов и локальному хранилищу.')
         window.destroy()
         return
     window.mainloop()

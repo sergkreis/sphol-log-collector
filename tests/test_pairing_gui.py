@@ -36,7 +36,9 @@ class PairingCallbacks(unittest.TestCase):
     def setUp(self):
         self.app = gui.ConnectedApp.__new__(gui.ConnectedApp)
         for name in ('window', 'copy_button', 'copy_feedback', 'connection',
-                     'store', 'queue', 'status', 'work'):
+                     'store', 'queue', 'status', 'work', 'identity', 'last_ack',
+                     'code_frame', 'pair_button', 'enable_button', 'unpair_button',
+                     'upload_state', 'start_button', 'stop_button'):
             setattr(self.app, name, Mock())
         self.app.pairing_code = Value()
         self.app.pairing = types.SimpleNamespace(deadline=float('inf'), poll=Mock())
@@ -44,6 +46,7 @@ class PairingCallbacks(unittest.TestCase):
         self.app.upload_enabled = False
         self.app.busy = False
         self.app.results = queue.Queue()
+        self.app.tailer = None
 
     def ready(self):
         self.app.results.put(('pair', 'TEST-1234', None))
@@ -112,3 +115,35 @@ class PairingCallbacks(unittest.TestCase):
         self.assertNotIn('secret', text)
         self.assertNotIn('TEST-1234', text)
         self.assertNotEqual(text, 'Код скопирован')
+
+    def test_empty_polls_preserve_identity_ack_and_consent(self):
+        app = self.app
+        app.pairing = None
+        app.queue.batch.return_value = []
+        app.queue.count.return_value = 0
+        app.uploader = types.SimpleNamespace(paused=False, credentials={
+            'characters': [{'name': 'Synthetic Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'})
+        app.show_identity()
+        app.identity.reset_mock()
+        app.network_tick()
+        app.work.assert_not_called()
+        self.assertFalse(app.upload_enabled)
+        app.enable()
+        for _ in range(3):
+            app.network_tick()
+        app.work.assert_not_called()
+        app.identity.config.assert_not_called()
+        app.last_ack.config.assert_not_called()
+        app.pair_button.config.assert_called_with(state='disabled')
+        snapshot = gui.Snapshot([])
+        snapshot.accepted = ['synthetic-id']
+        app.results.put(('upload', (snapshot, 'Сервер подтвердил сохранение'), None))
+        app.network_tick()
+        app.last_ack.config.assert_called_once()
+        app.network_tick()
+        app.last_ack.config.assert_called_once()
+        app.results.put(('upload', None, 'OSError'))
+        app.network_tick()
+        self.assertFalse(app.upload_enabled)
+        app.identity.config.assert_not_called()
+        app.last_ack.config.assert_called_once()

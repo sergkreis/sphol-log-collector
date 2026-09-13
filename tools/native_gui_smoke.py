@@ -11,12 +11,13 @@ import sqlite3
 import tempfile
 import threading
 import tkinter as tk
+from types import SimpleNamespace
 
 import unittest
 from unittest.mock import patch
 
 from collector.core import PendingQueue
-from collector.network_gui import ConnectedApp
+from collector.network_gui import ConnectedApp, Snapshot
 from collector.transport import Pairing
 
 
@@ -38,7 +39,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     app = ConnectedApp(window, root, queue)
                     window.update()
                     self.assertTrue(window.winfo_viewable())
-                    self.assertIn('NOT CONNECTED', app.connection.cget('text'))
+                    self.assertEqual('Персонаж не привязан', app.identity.cget('text'))
                     self.assertFalse(app.upload_enabled)
                     self.assertIsNone(app.uploader)
                     self.assertNotIn('server integration is not available', app.status.get())
@@ -76,6 +77,36 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertTrue(app.copy_button.instate(['disabled']))
                     self.assertEqual(window.clipboard_get(), 'TEST-1234')
                     app.pairing = None
+                    app.uploader = SimpleNamespace(paused=False, credentials={
+                        'characters': [{'name': 'Synthetic Smoke Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'})
+                    app.show_identity()
+                    app.refresh_controls()
+                    window.update()
+                    identity = app.identity.cget('text')
+                    ack = app.last_ack.cget('text')
+                    self.assertTrue(app.identity.winfo_viewable())
+                    self.assertTrue(app.pair_button.instate(['disabled']))
+                    self.assertFalse(app.code_frame.winfo_ismapped())
+                    self.assertFalse(app.upload_enabled)
+                    app.enable_button.invoke()
+                    with patch.object(app, 'work') as work:
+                        for _ in range(3):
+                            app.network_tick()
+                        work.assert_not_called()
+                    self.assertEqual(app.identity.cget('text'), identity)
+                    self.assertEqual(app.last_ack.cget('text'), ack)
+                    self.assertIn('сервер не проверялся', app.connection.cget('text'))
+                    snapshot = Snapshot([])
+                    snapshot.accepted = ['synthetic-ack']
+                    app.results.put(('upload', (snapshot, 'Сервер подтвердил сохранение: 1 событий.'), None))
+                    app.network_tick()
+                    confirmed = app.last_ack.cget('text')
+                    self.assertIn('Сервер подтвердил: 1', confirmed)
+                    app.network_tick()
+                    self.assertEqual(app.last_ack.cget('text'), confirmed)
+                    self.assertEqual(app.identity.cget('text'), identity)
+                    app.enable_button.invoke()
+                    self.assertFalse(app.upload_enabled)
 
                     def button(text):
                         def descendants(widget):
@@ -85,8 +116,10 @@ class NativeGuiSmoke(unittest.TestCase):
                         return next(w for w in descendants(window)
                                     if w.winfo_class() == 'TButton' and w.cget('text') == text)
 
-                    button('Start capture').invoke()
+                    button('Начать сбор').invoke()
                     self.assertIsNotNone(app.tailer)
+                    self.assertTrue(app.start_button.instate(['disabled']))
+                    self.assertTrue(app.stop_button.instate(['!disabled']))
                     # Future whole second avoids filtering by the session's microseconds.
                     stamp = datetime.now(timezone.utc).timestamp() + 2
                     stamp = datetime.fromtimestamp(stamp, timezone.utc).strftime('%Y.%m.%d %H:%M:%S')
@@ -96,8 +129,8 @@ class NativeGuiSmoke(unittest.TestCase):
                     window.after(1200, window.quit)
                     window.mainloop()
                     self.assertEqual(queue.count(), 1)
-                    self.assertIn('1 events', app.pending.get())
-                    button('Stop capture').invoke()
+                    self.assertIn('1 событий', app.pending.get())
+                    button('Остановить сбор и отправку').invoke()
                     self.assertIsNone(app.tailer)
                     self.assertFalse(app.upload_enabled)
                     with patch('collector.gui.messagebox.askyesno', return_value=False) as prompt:

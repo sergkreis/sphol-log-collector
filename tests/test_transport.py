@@ -79,7 +79,7 @@ class TransportTests(unittest.TestCase):
                 t.Uploader(credentials(), http).upload(q)
             self.assertEqual(q.count(), 1)
             http.post.return_value = (200, {'accepted_ids': [e['id']], 'rejected': []})
-            self.assertIn('Confirmed durable', t.Uploader(credentials(), http).upload(q))
+            self.assertIn('Сервер подтвердил', t.Uploader(credentials(), http).upload(q))
             self.assertEqual(q.count(), 0)
 
     def test_retry_and_revocation(self):
@@ -89,7 +89,7 @@ class TransportTests(unittest.TestCase):
             http = Mock()
             http.post.side_effect = error
             uploader = t.Uploader(credentials(), http)
-            self.assertIn('retry', uploader.upload(q))
+            self.assertIn('повтор', uploader.upload(q))
             self.assertGreater(uploader.next_try, 0)
             q.acknowledge.assert_not_called()
         http.post.side_effect = t.HTTPFailure(401)

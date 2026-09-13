@@ -26,6 +26,8 @@ class CallbackTests(unittest.TestCase):
         self.app.tailer = Mock()
         self.app.status = Mock()
         self.app.pending = Mock()
+        self.app.start_button = Mock()
+        self.app.stop_button = Mock()
 
     def test_close_cancel_keeps_running(self):
         with patch.object(gui.messagebox, 'askyesno', return_value=False) as prompt:
@@ -54,7 +56,7 @@ class CallbackTests(unittest.TestCase):
         tailer = self.app.tailer
         self.app.tick()
         self.assertIs(self.app.tailer, tailer)
-        self.assertIn('not uploaded', self.app.status.set.call_args.args[0])
+        self.assertIn('не отправлены', self.app.status.set.call_args.args[0])
         self.app.window.after.assert_called_once()
 
     def test_error_stops_without_exposing_content(self):
@@ -66,4 +68,4 @@ class CallbackTests(unittest.TestCase):
     def test_stop_is_disconnected(self):
         self.app.stop()
         self.assertIsNone(self.app.tailer)
-        self.assertIn('NOT CONNECTED', self.app.status.set.call_args.args[0])
+        self.assertIn('Сбор выключен', self.app.status.set.call_args.args[0])
