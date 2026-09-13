@@ -116,6 +116,14 @@ class NativeGuiSmoke(unittest.TestCase):
                         return next(w for w in descendants(window)
                                     if w.winfo_class() == 'TButton' and w.cget('text') == text)
 
+                    self.assertFalse(app.local_enabled.get())
+                    with patch('collector.gui.messagebox.askyesno', return_value=False):
+                        app.local_toggle.invoke()
+                    self.assertIsNone(app.local_capture)
+                    with patch('collector.gui.messagebox.askyesno', return_value=True):
+                        app.local_toggle.invoke()
+                    self.assertIsNotNone(app.local_capture)
+                    local_path = app.local_capture.path
                     button('Начать сбор').invoke()
                     self.assertIsNotNone(app.tailer)
                     self.assertTrue(app.start_button.instate(['disabled']))
@@ -125,13 +133,18 @@ class NativeGuiSmoke(unittest.TestCase):
                     stamp = datetime.fromtimestamp(stamp, timezone.utc).strftime('%Y.%m.%d %H:%M:%S')
                     with log.open('a', encoding='utf-8') as stream:
                         stream.write(f'[ {stamp} ] (combat) Synthetic smoke damage\n')
+                        stream.write(f'[ {stamp} ] (notify) Synthetic local-only notification\n')
                     # Exercise scheduled Tk capture and network-idle callbacks.
                     window.after(1200, window.quit)
                     window.mainloop()
+                    self.assertEqual(app.local_capture.count, 2)
                     self.assertEqual(queue.count(), 1)
                     self.assertIn('1 событий', app.pending.get())
                     button('Остановить сбор и отправку').invoke()
                     self.assertIsNone(app.tailer)
+                    self.assertIsNone(app.local_capture)
+                    self.assertFalse(app.local_enabled.get())
+                    self.assertTrue(local_path.exists())
                     self.assertFalse(app.upload_enabled)
                     with patch('collector.gui.messagebox.askyesno', return_value=False) as prompt:
                         app.close()

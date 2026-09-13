@@ -1,5 +1,33 @@
 # Privacy and review boundary
 
+## Optional full local Gamelogs capture
+
+The Russian toggle **Сохранять все игровые события локально** requires a separate
+confirmation and defaults OFF on every launch. It immediately records only new
+complete UTF-8 lines of every type from Gamelogs, never Chatlogs. Existing files
+start at EOF; a pre-existing partial line is skipped. New/rotated files are read
+from their beginning. The original game logs already remain on disk: previous
+ESS test messages are not claimed lost, and are not automatically backfilled.
+
+Records can contain sensitive game notifications, names, locations and links.
+They are never passed to PendingQueue or the uploader; combat-only cloud behavior
+and existing credentials/queue are unchanged. Local recording needs no pairing.
+Files are private to the current Windows account (ACL inheritance removed), but
+not encrypted against programs running as that user or administrators.
+
+Storage: `%LOCALAPPDATA%\SPHOLLogCollector\local-captures\<session-id>\` contains
+`events.jsonl` (original UTF-8 line, source filename, byte offset) and `session.json`
+(start/update UTC, count, bytes, status, no-upload/no-backfill flags). The UI shows
+the folder and count. Maximum 64 MiB event data/session and 128 MiB total with
+metadata reserve; no automatic deletion or circular overwrite. Size, file-count,
+overlong-line, invalid UTF-8 and I/O failures stop local recording visibly. Combat
+collection/upload remains independent. Stop/exit closes local files; incomplete
+lines remain in original Gamelogs. Restart requires new consent and starts at EOF.
+An interrupted session may retain status `recording`; count can be recovered from
+its JSONL. This is polling, not a guarantee against files deleted between polls.
+Move old sessions manually if full; do not publish raw captures in issues.
+
+
 This client uses fixed-origin verified HTTPS only after explicit pairing/upload consent.
 It has no telemetry, crash reporting or updater. It stores its own scoped credential
 with Windows DPAPI CurrentUser, without plaintext fallback.
