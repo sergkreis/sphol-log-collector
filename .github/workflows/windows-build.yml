@@ -29,6 +29,12 @@ jobs:
           if (Test-Path $report) { Get-Content $report }
           if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Frozen smoke failed' }
           if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
+      - name: Build isolated updater dummy (never collector state)
+        run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummy tools/update_dummy.py
+      - name: Frozen self-update against isolated dummy executable
+        run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe
+      - name: Generate version-bound update manifest
+        run: python -m tools.make_update_manifest dist/SPHOLLogCollector.exe
       - shell: pwsh
         run: |
           $hash = (Get-FileHash dist/SPHOLLogCollector.exe -Algorithm SHA256).Hash.ToLower()
@@ -40,6 +46,7 @@ jobs:
           name: SPHOLLogCollector-windows-x64-${{ github.sha }}
           path: |
             dist/SPHOLLogCollector.exe
+            dist/update-manifest.json
             dist/SHA256SUMS.txt
             dist/SOURCE-COMMIT.txt
           if-no-files-found: error

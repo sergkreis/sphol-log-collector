@@ -64,6 +64,8 @@ class ConnectedApp(App):
         window.after(250, self.network_tick)
         from .expanded_gui import ExpandedControls
         self.expanded = ExpandedControls(self)
+        from .update_gui import UpdateControls
+        self.updates = UpdateControls(self)
 
     def refresh_controls(self):
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')

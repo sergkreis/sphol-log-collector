@@ -156,6 +156,8 @@ class App:
 def main():
     window = tk.Tk()
     try:
+        from .updater import instance_lock
+        instance = instance_lock(Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector')
         root = documents() / 'EVE' / 'logs' / 'Gamelogs'
         state = Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector' / 'pending.sqlite3'
         from .network_gui import ConnectedApp

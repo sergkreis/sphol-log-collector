@@ -10,4 +10,13 @@ if __name__ == "__main__":
             result = unittest.TextTestRunner(stream=report, verbosity=2).run(
                 unittest.defaultTestLoader.loadTestsFromTestCase(NativeGuiSmoke))
         raise SystemExit(0 if result.wasSuccessful() else 1)
+    if len(sys.argv) == 6 and sys.argv[1] == '--apply-update':
+        from collector.updater import helper
+        try:
+            helper(*sys.argv[2:])
+        except Exception:
+            raise SystemExit(1)
+        raise SystemExit(0)
+    if len(sys.argv) != 1:
+        raise SystemExit(2)
     main()

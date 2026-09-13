@@ -1,0 +1,89 @@
+"""Main-thread update consent/lifecycle; downloader never touches app state."""
+import os
+import queue
+import sys
+import threading
+import time
+from .gui import ttk, messagebox
+from . import updater
+from .version import VERSION
+
+
+def active(app):
+    expanded = getattr(app, 'expanded', None)
+    return bool(app.tailer or app.local_capture or app.upload_enabled or app.busy or app.pairing or (expanded and (expanded.enabled or expanded.tailer or expanded.busy or expanded.pairing)))
+
+
+class UpdateControls:
+    def __init__(self, app):
+        self.app, self.busy = app, False
+        self.results = queue.Queue()
+        self.label = ttk.Label(app.frame, text=f'Версия {VERSION} · обновления только вручную', wraplength=620)
+        self.label.pack(anchor='w')
+        self.button = ttk.Button(app.frame, text='Обновить программу', command=self.check)
+        self.button.pack(anchor='w')
+        if os.name != 'nt' or not getattr(sys, 'frozen', False):
+            self.button.config(state='disabled')
+        app.window.after(200, self.poll)
+
+    def check(self):
+        if self.busy:
+            return
+        if active(self.app):
+            messagebox.showwarning('Сначала остановите сбор', 'Остановите сбор, локальную запись и v2; дождитесь завершения запросов. Во время вылета обновление не выполняется.')
+            return
+        self.busy = True
+        self.button.config(state='disabled')
+        self.label.config(text=f'Версия {VERSION} · проверка GitHub и загрузка…')
+        state = self.app.queue.path.parent
+        def run():
+            try:
+                self.results.put((updater.prepare(VERSION, state), None))
+            except Exception as exc:
+                self.results.put((None, type(exc).__name__))
+        threading.Thread(target=run, daemon=True).start()
+
+    def poll(self):
+        try:
+            result, error = self.results.get_nowait()
+        except queue.Empty:
+            pass
+        else:
+            self.busy = False
+            self.button.config(state='normal')
+            if error:
+                self.label.config(text=f'Версия {VERSION} · обновление не выполнено ({error}); файлы программы не изменены.')
+            elif result is None:
+                self.label.config(text=f'Версия {VERSION} · более новой стабильной версии нет.')
+            elif active(self.app):
+                self.label.config(text='Обновление отложено: сбор или запрос снова включён. Остановите и повторите.')
+            else:
+                stage, candidate, sha = result
+                if messagebox.askyesno('Перезапустить и обновить?', f'{VERSION} → {candidate}. SHA-256 проверен, цифровой подписи нет. Доверие — репозиторию sergkreis/sphol-log-collector и GitHub. Сохранить очереди и перезапустить сейчас? Сбор после запуска выключен.'):
+                    # Recheck after the modal's nested Tk event loop.
+                    if not active(self.app):
+                        try:
+                            self.process = updater.start_helper(stage, sha)
+                            self.stage, self.deadline = stage, time.monotonic() + 30
+                            self.busy = True
+                            self.button.config(state='disabled')
+                            self.app.window.after(100, self.wait_helper)
+                        except Exception:
+                            self.label.config(text='Не удалось запустить помощник. Программа не изменена.')
+        self.app.window.after(200, self.poll)
+
+    def wait_helper(self):
+        if (self.stage / 'ready').exists() and not active(self.app):
+            # No active workers or local file handles. Committed queue data remains.
+            self.app.stop()
+            self.app.expanded.close()
+            self.app.queue.close()
+            updater.private_write(self.stage / 'apply', b'apply')
+            self.app.window.destroy()
+            return
+        if self.process.poll() is not None or time.monotonic() > self.deadline or active(self.app):
+            self.busy = False
+            self.button.config(state='normal')
+            self.label.config(text='Перезапуск отменён/помощник не готов. Текущая программа не изменена.')
+            return
+        self.app.window.after(100, self.wait_helper)
