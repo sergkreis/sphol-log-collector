@@ -31,8 +31,10 @@ jobs:
           if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
       - name: Build isolated updater dummy (never collector state)
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummy tools/update_dummy.py
+      - name: Build distinct replacement dummy
+        run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
-        run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe
+        run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
       - name: Generate version-bound update manifest
         run: python -m tools.make_update_manifest dist/SPHOLLogCollector.exe
       - shell: pwsh
