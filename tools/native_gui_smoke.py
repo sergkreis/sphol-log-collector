@@ -42,7 +42,9 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertFalse(app.expanded.enabled)
                     self.assertIsNone(app.expanded.tailer)
                     self.assertEqual(app.expanded.queue.count(), 0)
-                    self.assertTrue(app.expanded.start_button.winfo_viewable())
+                    self.assertFalse(app.expanded.start_button.winfo_viewable())
+                    self.assertFalse(app.settings.winfo_viewable())
+                    self.assertTrue(app.main_button.winfo_viewable())
                     self.assertEqual(app.expanded.approve_button.cget('text'), 'Подтвердить v2 в браузере…')
                     with patch('collector.expanded_gui.messagebox.askyesno', return_value=False), patch.object(app.expanded, 'work') as work:
                         app.expanded.approve_button.invoke()
@@ -50,6 +52,26 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertIsNone(app.expanded.pairing)
                     self.assertFalse(app.expanded.enabled)
                     self.assertTrue(window.winfo_viewable())
+                    app.settings_button.invoke()
+                    window.update()
+                    self.assertTrue(app.settings.winfo_viewable())
+                    app.settings_button.invoke()
+                    window.update()
+                    self.assertFalse(app.settings.winfo_viewable())
+                    # Actual update button/result path, with only transport mocked.
+                    app.updates.button.config(state='normal')
+                    with patch('collector.updater.prepare', return_value=None) as prepare:
+                        app.updates.button.invoke()
+                        import time
+                        deadline = time.monotonic() + 3
+                        while app.updates.results.empty() and time.monotonic() < deadline:
+                            time.sleep(.01)
+                        app.updates.poll()
+                        prepare.assert_called_once()
+                    self.assertIn('более новой стабильной версии нет', app.updates.label.cget('text'))
+                    app.updates.results.put((None, 'OSError'))
+                    app.updates.poll()
+                    self.assertIn('файлы программы не изменены', app.updates.label.cget('text'))
                     self.assertEqual('Персонаж не привязан', app.identity.cget('text'))
                     self.assertFalse(app.upload_enabled)
                     self.assertIsNone(app.uploader)
@@ -99,7 +121,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertTrue(app.pair_button.instate(['disabled']))
                     self.assertFalse(app.code_frame.winfo_ismapped())
                     self.assertFalse(app.upload_enabled)
-                    app.start_button.invoke()
+                    app.main_button.invoke()
                     with patch.object(app, 'work') as work:
                         for _ in range(3):
                             app.network_tick()
@@ -116,7 +138,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     app.network_tick()
                     self.assertEqual(app.last_ack.cget('text'), confirmed)
                     self.assertEqual(app.identity.cget('text'), identity)
-                    app.stop_button.invoke()
+                    app.main_button.invoke()
                     self.assertFalse(app.upload_enabled)
 
                     def button(text):
@@ -135,7 +157,7 @@ class NativeGuiSmoke(unittest.TestCase):
                         app.local_toggle.invoke()
                     self.assertIsNotNone(app.local_capture)
                     local_path = app.local_capture.path
-                    button('Начать сбор').invoke()
+                    app.start()
                     self.assertIsNotNone(app.tailer)
                     self.assertTrue(app.start_button.instate(['disabled']))
                     self.assertTrue(app.stop_button.instate(['!disabled']))
@@ -151,7 +173,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertEqual(app.local_capture.count, 2)
                     self.assertEqual(queue.count(), 1)
                     self.assertIn('1 событий', app.pending.get())
-                    button('Остановить сбор и отправку').invoke()
+                    app.main_button.invoke()
                     self.assertIsNone(app.tailer)
                     self.assertIsNone(app.local_capture)
                     self.assertFalse(app.local_enabled.get())

@@ -18,7 +18,8 @@ class ExpandedControls:
         self.busy = self.enabled = self.closed = False
         self.results = queue.Queue()
         frame = ttk.LabelFrame(app.network_area, text='Отдельный режим v2: все Gamelogs', padding=8)
-        frame.pack(fill='x', pady=8)
+        # Server support is unavailable. Preserve separate consent/state internals,
+        # but do not mount technical controls or imply a usable public feature.
         ttk.Label(frame, text='Все типы, включая личные уведомления. Без Chatlogs и диагностики. Локальная запись выше по-прежнему НЕ отправляется.', wraplength=620).pack(anchor='w')
         self.status = ttk.Label(frame, text='Отправка v2 выключена. Нужно отдельное согласие и подтверждение в браузере.', wraplength=620)
         self.status.pack(anchor='w')

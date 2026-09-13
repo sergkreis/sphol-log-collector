@@ -20,7 +20,7 @@ jobs:
         run: python -m tools.native_gui_smoke
       - run: python -m pip install --require-hashes --only-binary=":all:" -r requirements-build.txt
       - run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name SPHOLLogCollector run_collector.py
-      - name: Frozen EXE native Tk and independent v2 panel smoke
+      - name: Frozen EXE graphite Tk and default-off v2 smoke
         shell: pwsh
         run: |
           $report = Join-Path $env:RUNNER_TEMP 'frozen-smoke.txt'

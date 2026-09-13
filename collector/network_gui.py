@@ -51,7 +51,7 @@ class ConnectedApp(App):
         self.pair_button = ttk.Button(buttons, text='Привязать персонажа…', command=self.pair)
         self.pair_button.pack(side='left')
 
-        self.unpair_button = ttk.Button(buttons, text='Удалить привязку…', command=self.unpair)
+        self.unpair_button = ttk.Button(self.danger_area, text='Удалить привязку…', command=self.unpair)
         self.unpair_button.pack(side='left')
         try:
             credentials = self.store.load()
