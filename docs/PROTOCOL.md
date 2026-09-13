@@ -1,8 +1,9 @@
-# Proposed collector API v1 — NOT implemented or approved
+# Collector API v1 — implementation specification
 
-All paths below are proposed under `https://sphol.com`; their presence in this
-specification does not imply that the server accepts them. Client preview performs
-no requests. Do not reuse website session cookies or EVE access tokens as collector
+Exact wire fields and responses are defined in [IMPLEMENTATION-CONTRACT.md](IMPLEMENTATION-CONTRACT.md).
+Client HTTPS transport is implemented; server deployment and end-to-end verification
+remain separate release gates. All paths use `https://sphol.com`; their presence in this
+specification does not imply that the server accepts them. Do not reuse website session cookies or EVE access tokens as collector
 credentials. Existing website authentication uses browser SSO and member sessions;
 collector authorization must be a separate explicitly scoped implementation.
 

@@ -33,7 +33,7 @@ class App:
         self.pending = tk.StringVar()
         frame = ttk.Frame(window, padding=20)
         frame.pack(fill='both', expand=True)
-        ttk.Label(frame, text='Local-only preview • Nothing is uploaded', font=('', 14)).pack(anchor='w')
+        ttk.Label(frame, text='Foreground combat capture • Explicit upload consent', font=('', 14)).pack(anchor='w')
         ttk.Label(frame, text=str(log_root), wraplength=600).pack(anchor='w', pady=10)
         ttk.Label(frame, text='Reads new combat lines only. No Chatlogs, memory, passwords or background service.', wraplength=600).pack(anchor='w')
         ttk.Label(frame, textvariable=self.status, wraplength=600).pack(anchor='w', pady=15)
@@ -89,7 +89,8 @@ def main():
     try:
         root = documents() / 'EVE' / 'logs' / 'Gamelogs'
         state = Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector' / 'pending.sqlite3'
-        App(window, root, PendingQueue(state))
+        from .network_gui import ConnectedApp
+        ConnectedApp(window, root, PendingQueue(state))
     except Exception as error:
         messagebox.showerror('Cannot open collector', str(error))
         window.destroy()

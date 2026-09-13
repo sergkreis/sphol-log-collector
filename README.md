@@ -1,57 +1,27 @@
-# SPHOL combat-log collector — stage 1 preview
+# SPHOL foreground combat-log collector
 
-**Not connected. No upload implementation. No Windows binary released yet.**
-This independent client is intended for public GitHub source review before release.
-Publication is mandatory for the eventual release, but is deliberately held for
-owner review. The website remains a separate private project.
+**HTTPS client implemented; no Windows binary released, native GUI/build and deployed end-to-end flow not yet verified.** Public client source is separate from the private website. Publication/release remain held for owner review.
 
-Manually open before a sortie, click **Start capture**, then Stop/close afterwards.
-No administrator, installation, service, startup entry, tray or silent background
-execution is required. Closing terminates the program; pending data stays on disk.
+## Use on Windows
+Python 3.11+ with Tk: `python run_collector.py`. No administrator, installation, startup entry, service, tray, memory access or injection. Open during your sortie and close afterwards.
 
-## Run / test
+1. Pair with SPHOL; manually confirm the displayed code, member identity and characters in your browser at `https://sphol.com/collector/pair`. No password is entered in the collector.
+2. Click **Start capture** for new combat lines. Existing files start at EOF; stopped-time history is not backfilled.
+3. Click **Enable uploads** explicitly. Only exact server-approved character names may leave the computer. Pairing alone is not proof of a current connection; only exact server acknowledgement is reported as confirmed upload.
+4. **Stop capture** also stops new uploads. An in-flight request may finish. Close exits; pending events survive and retry IDs do not change. Local unpair deletes credentials/pending after confirmation; revoke the installation separately on the website.
 
-Python 3.11+ with Tk (included in the usual python.org Windows installer):
+No deployed server success is assumed. If endpoints are absent, authorization fails, or responses are malformed, pending remains and the UI reports failure. HTTP 401/403 pauses uploads. Retryable network/429/5xx errors back off. Permanent rejections stay pending and pause uploads; no silent deletion.
 
-```powershell
-python run_collector.py
-python -m unittest discover -s tests -v
-```
+## Data boundary
+Only read-only, non-recursive Windows Documents (including redirected Documents)/`EVE/logs/Gamelogs/*.txt`. Only `(combat)` events; no Chatlogs, notify/jumps, browser credentials, EVE tokens or game memory. UTF-8 English/Russian listener headers; markup stripped and data remains untrusted/client-reported. Combat text can identify people/ships/activities.
 
-The GUI resolves the Windows Documents known folder and reads only its
-`EVE/logs/Gamelogs/*.txt` files, non-recursively, read-only. Tests use temporary,
-synthetic directories. The local queue is `%LOCALAPPDATA%/SPHOLLogCollector/pending.sqlite3`.
-Delete pending in the GUI to remove queued records (not a forensic secure erase).
+Queue: `%LOCALAPPDATA%/SPHOLLogCollector/pending.sqlite3`, unencrypted, max 10,000 events / 16 MiB payload, no eviction. Windows CurrentUser DPAPI protects `credentials.dpapi`; no plaintext fallback. Delete pending is not forensic erasure. Unapproved-character events remain pending visibly and do not block approved-character selection. Only accepted IDs from a complete validated response are removed.
 
-Only `(combat)` is accepted, including damage and tackle attempts. `notify`,
-`None` (including jumps), chat and unknown types are excluded. UTF-8 English and
-Russian listener headers are supported. Markup is stripped; combat text is not
-interpreted as verified damage/tackle success. Pilot labels come from untrusted logs.
-Multiple files, rename rotation, observed truncation, partial UTF-8 lines and
-restart-persistent pending IDs are covered by tests. Files already present start at
-EOF; new files are timestamp-filtered against Start (UTC). Logs have second
-precision: events in the fractional starting second can be omitted rather than
-backfilling history. Events while stopped are never backfilled. Captured pending
-records survive restart. In-place rewrite that regrows beyond the old offset between
-polls is not reliably detected; native Windows rotation tests are a release gate.
+Known boundaries: timestamps have second precision; the starting fractional second may be omitted. In-place log rewrites that regrow beyond the prior offset between polls may be missed. File count/session/line bounds stop or discard oversized input visibly where applicable. Native Windows ACL/reparse/race and multi-instance behavior require release review. Run only under a trusted Windows user account.
 
-Queue: at most 10,000 events / 16 MiB serialized payload. SQLite overhead is extra;
-no silent eviction. On full, the cursor stays before the blocked event. The GUI
-shows paused/full and polls for space. Disk errors stop capture visibly. Directory
-limit: 512 `.txt` files, 1,024 identities per capture; 256 lines/file/poll, 8 KiB/line.
-Archive old logs if the directory limit is reached. Oversized lines are discarded.
+## Verification and portable build
+`python -m unittest discover -s tests -v` uses synthetic temporary logs and mocked HTTPS responses; no production requests. Native DPAPI round-trip/tamper test runs only on Windows. Callback tests are not native GUI tests.
 
-## Windows portable build (not yet executed)
+`.github/workflows/windows-build.yml` is manual-only, Windows 2022 + Python 3.11.9, full action SHA pins verified against upstream tags, version-pinned build-only dependencies. It tests, builds a PyInstaller one-file/windowed EXE, and writes SHA256/source-commit files. **No artifact upload or release/push occurs.** Run the workflow after approved source publication; it has not run here. Dependency wheel hash locking, signing/attestation and manual native UI/rotation/exit/E2E failure checks are still release gates. PyInstaller extracts into a temporary directory; portable does not mean no disk writes. Runtime uses only the Python standard library.
 
-On a clean Windows runner, after reviewing and pinning dependencies:
-`python -m PyInstaller --onefile --windowed --name SPHOLLogCollector run_collector.py`
-
-PyInstaller's one-file executable extracts its runtime to a temporary directory.
-Portable means no installation, not zero filesystem writes. Runtime needs no third-party
-Python packages. A future reviewed Actions workflow must pin action commit SHAs and
-build dependencies, run tests on Windows, build from the exact public tag, produce
-SHA-256 checksums and artifact attestations, and publish a GitHub Release only after
-approval. No workflow that uploads or publishes is enabled in this draft.
-Open source, checksums and provenance improve inspectability; none guarantees safety.
-
-See [privacy](docs/PRIVACY.md), [proposed protocol](docs/PROTOCOL.md), and [plan](PLAN.md).
+See [privacy](docs/PRIVACY.md), [protocol](docs/PROTOCOL.md), and the normative [implementation contract](docs/IMPLEMENTATION-CONTRACT.md). Do not include real logs, credentials or private website files in public issues/source.

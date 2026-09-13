@@ -38,7 +38,8 @@ def parse_line(raw: bytes, listener: str = '') -> dict | None:
 def safe_open(path: Path):
     """Reject symlinks, devices and path swaps; never open a game file writable."""
     before = path.lstat()
-    if not stat.S_ISREG(before.st_mode) or path.is_symlink():
+    if (not stat.S_ISREG(before.st_mode) or path.is_symlink()
+            or getattr(before, 'st_file_attributes', 0) & 0x400):
         raise OSError('Not a regular log file')
     flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
     fd = os.open(path, flags)
@@ -83,9 +84,19 @@ class PendingQueue:
                 raise QueueFull('Queue full; collection paused. Nothing uploaded.')
             self.db.execute('INSERT INTO pending VALUES (?,?,?)', (event_id, payload, size))
 
-    def batch(self, limit=100):
-        return [{'id': i, **json.loads(p)} for i, p in self.db.execute(
-            'SELECT id,payload FROM pending ORDER BY rowid LIMIT ?', (min(max(limit, 0), 100),))]
+    def batch(self, limit=100, listeners=None):
+        result = []
+        limit = min(max(limit, 0), 100)
+        if not limit:
+            return result
+        for identity, payload in self.db.execute('SELECT id,payload FROM pending ORDER BY rowid'):
+            event = json.loads(payload)
+            if listeners is not None and event.get('listener') not in listeners:
+                continue
+            result.append({**event, 'id': identity})
+            if len(result) >= limit:
+                break
+        return result
 
     def count(self):
         return self.db.execute('SELECT count(*) FROM pending').fetchone()[0]

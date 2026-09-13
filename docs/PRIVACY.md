@@ -1,7 +1,9 @@
 # Privacy and review boundary
 
-This preview has **no network code, telemetry, crash reporting, updater or login**.
-It never reads Chatlogs, game memory, browser cookies, credentials or EVE passwords;
+This client uses fixed-origin verified HTTPS only after explicit pairing/upload consent.
+It has no telemetry, crash reporting or updater. It stores its own scoped credential
+with Windows DPAPI CurrentUser, without plaintext fallback.
+It never reads Chatlogs, game memory, browser cookies, other applications' credentials or EVE passwords;
 never injects into a process; never changes game logs. The only game input is the
 non-recursive Documents/EVE/logs/Gamelogs directory. Small header reads identify
 listeners; existing historical event bodies are not queued. The bounded header
@@ -17,14 +19,14 @@ It is **not encrypted**; other programs acting as that user may read it. Unix mo
 0600 is applied where supported; native Windows ACL/reparse-point hardening and
 single-instance locking need verification before release. Do not run from a shared
 untrusted account. No automatic expiry is implemented: data remains until explicitly
-deleted or, in a future version, durably acknowledged by the server. Backups/OS disk
+deleted or durably acknowledged by the server with an exact validated event-ID response. Backups/OS disk
 snapshots may retain deleted content. No queue or real log is part of the repository.
 
 Public content consists only of client code, tests with invented names, and these
 documents. Never submit actual logs, queued records, access tokens, screenshots
 containing private combat information, or private website configuration in issues.
 
-Future upload requires explicit browser pairing and consent; collection alone is
+Upload requires explicit browser pairing and consent plus Enable uploads; collection alone is
 not proof of character ownership. Server retention, member visibility, deletion and
 revocation policy must be approved before enabling transmission. Source availability
 is a review opportunity, not a claim that a binary or dependency is harmless.
