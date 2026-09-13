@@ -1,4 +1,5 @@
 """Synthetic offline transport fixtures only; no requests to production."""
+from contextlib import closing
 from copy import deepcopy
 import os
 from pathlib import Path
@@ -67,9 +68,9 @@ class TransportTests(unittest.TestCase):
             t.build_batch(q, credentials())
 
     def test_durable_queue_only_deleted_on_valid_ack(self):
-        with tempfile.TemporaryDirectory() as temp:
-            q = PendingQueue(Path(temp) / 'q.sqlite')
-            self.addCleanup(q.close)
+        # Exit in reverse order: close SQLite before removing its directory,
+        # including assertion failures. addCleanup runs too late for this scope.
+        with tempfile.TemporaryDirectory() as temp, closing(PendingQueue(Path(temp) / 'q.sqlite')) as q:
             e = event()
             q.put(e['id'], {k: v for k, v in e.items() if k != 'id'})
             http = Mock()
