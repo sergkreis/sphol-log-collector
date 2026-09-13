@@ -15,4 +15,4 @@ def queue_summary(queue, listeners):
             unknown += 1
         elif listener in listeners:
             eligible += 1
-    return f'На компьютере: {total} событий · Для персонажа: {eligible}\nБез персонажа: {unknown} · Остальные: {total - eligible - unknown}'
+    return f'Событий на компьютере: {total} · Для персонажа: {eligible}\nБез персонажа: {unknown} · Остальные: {total - eligible - unknown}'

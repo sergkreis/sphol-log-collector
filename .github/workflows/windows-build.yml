@@ -35,6 +35,8 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
         run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
+      - name: Pinned released v0.2.0 to real new collector replacement and relaunch
+        run: python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe
       - name: Generate version-bound update manifest
         run: python -m tools.make_update_manifest dist/SPHOLLogCollector.exe
       - shell: pwsh

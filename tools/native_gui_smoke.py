@@ -172,7 +172,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     window.mainloop()
                     self.assertEqual(app.local_capture.count, 2)
                     self.assertEqual(queue.count(), 1)
-                    self.assertIn('1 событий', app.pending.get())
+                    self.assertIn('Событий на компьютере: 1', app.pending.get())
                     app.main_button.invoke()
                     self.assertIsNone(app.tailer)
                     self.assertIsNone(app.local_capture)

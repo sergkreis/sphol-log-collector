@@ -17,7 +17,7 @@ class PresentationTests(unittest.TestCase):
                     queue.put(str(i), {'listener': listener})
                 before = list(queue.db.execute('SELECT * FROM pending'))
                 text = queue_summary(queue, {'Тест'})
-                self.assertIn('На компьютере: 7', text)
+                self.assertIn('Событий на компьютере: 7', text)
                 self.assertIn('Для персонажа: 1', text)
                 self.assertIn('Без персонажа: 5', text)
                 self.assertIn('Остальные: 1', text)
