@@ -133,7 +133,7 @@ class App:
         if self.tailer:
             try:
                 self.tailer.poll()
-                self.status.set('Сбор включён — читаются новые боевые события.')
+                self.status.set('Сбор включён — читаются новые боевые события.' if not self.tailer.unattributed_files else 'Есть журналы без проверенного заголовка персонажа: чтение этих файлов приостановлено, очередь сохранена.')
             except QueueFull:
                 self.status.set('Сбор приостановлен: очередь заполнена. Эти данные ещё не отправлены.')
             except Exception:

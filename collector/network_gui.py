@@ -35,7 +35,7 @@ class ConnectedApp(App):
         self.upload_state.pack(anchor='w')
         self.last_ack = ttk.Label(self.network_area, text='Подтверждение сервера: в этом запуске ещё не получено.', wraplength=620)
         self.last_ack.pack(anchor='w', pady=(6, 0))
-        self.connection = ttk.Label(self.network_area, text='Для отправки привяжите персонажа, затем разрешите отправку.', wraplength=620)
+        self.connection = ttk.Label(self.network_area, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий на sphol.com.', wraplength=620)
         self.connection.pack(anchor='w', pady=(6, 8))
         self.code_frame = code_frame = ttk.Frame(self.network_area)
         ttk.Label(code_frame, text='Код привязки:').pack(side='left', padx=(0, 8))
@@ -50,8 +50,7 @@ class ConnectedApp(App):
         buttons.pack(anchor='w', pady=(8, 0))
         self.pair_button = ttk.Button(buttons, text='Привязать персонажа…', command=self.pair)
         self.pair_button.pack(side='left')
-        self.enable_button = ttk.Button(buttons, text='Разрешить отправку', command=self.enable)
-        self.enable_button.pack(side='left', padx=8)
+
         self.unpair_button = ttk.Button(buttons, text='Удалить привязку…', command=self.unpair)
         self.unpair_button.pack(side='left')
         try:
@@ -66,7 +65,7 @@ class ConnectedApp(App):
 
     def refresh_controls(self):
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
-        self.enable_button.config(state='normal' if self.uploader and not self.uploader.paused else 'disabled', text='Выключить отправку' if self.upload_enabled else 'Разрешить отправку')
+
         self.unpair_button.config(state='disabled' if self.busy else 'normal')
         self.upload_state.config(text='Отправка включена — только для привязанного персонажа' if self.upload_enabled else 'Отправка выключена — данные остаются на компьютере')
         self.capture_controls()
@@ -96,7 +95,7 @@ class ConnectedApp(App):
     def show_identity(self):
         c = self.uploader.credentials
         self.identity.config(text='Персонаж: ' + ', '.join(x['name'] for x in c['characters']))
-        self.connection.config(text='Привязка действует до ' + c['expires_at'] + '. Отправку нужно разрешить отдельно.')
+        self.connection.config(text='Привязка действует до ' + c['expires_at'] + '. «Начать сбор» включает отправку; остановка сохраняет очередь.')
 
     def work(self, kind, function):
         if self.busy:
@@ -116,17 +115,16 @@ class ConnectedApp(App):
         if self.queue.count():
             messagebox.showwarning('Есть очередь', 'Перед новой привязкой удалите очередь, чтобы исключить передачу данных другому аккаунту.')
             return
-        if not messagebox.askyesno('Привязать персонажа?', 'Открыть sphol.com для подтверждения персонажа? Отправлять можно только его события. Пароль здесь не вводится.'):
+        if not messagebox.askyesno('Привязать персонажа?', 'Открыть sphol.com для подтверждения персонажа? После привязки «Начать сбор» автоматически отправляет его новые боевые события и сохранённую очередь на sphol.com. Остановка прекращает сбор и новые запросы. Пароль здесь не вводится.'):
             return
         self.pairing = Pairing()
         self.connection.config(text='Получаем код привязки…')
         self.work('pair', self.pairing.start)
 
-    def enable(self):
-        if self.uploader and not self.uploader.paused:
-            self.upload_enabled = not self.upload_enabled
-            self.connection.config(text='Ожидание событий. Пустая очередь не подтверждает связь с сервером.' if self.upload_enabled else 'Новая отправка запрещена; уже отправленный запрос может завершиться.')
-            self.refresh_controls()
+    def start(self):
+        super().start()
+        self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
+        self.refresh_controls()
 
     def stop(self):
         self.upload_enabled = False
@@ -180,6 +178,7 @@ class ConnectedApp(App):
                 try:
                     self.store.save(result)
                     self.uploader = Uploader(result)
+                    self.upload_enabled = bool(self.tailer)
                     self.show_identity()
                 except Exception:
                     self.connection.config(text='Не удалось безопасно сохранить привязку Windows. Отправка недоступна.')

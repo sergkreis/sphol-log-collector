@@ -88,7 +88,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertTrue(app.pair_button.instate(['disabled']))
                     self.assertFalse(app.code_frame.winfo_ismapped())
                     self.assertFalse(app.upload_enabled)
-                    app.enable_button.invoke()
+                    app.start_button.invoke()
                     with patch.object(app, 'work') as work:
                         for _ in range(3):
                             app.network_tick()
@@ -105,7 +105,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     app.network_tick()
                     self.assertEqual(app.last_ack.cget('text'), confirmed)
                     self.assertEqual(app.identity.cget('text'), identity)
-                    app.enable_button.invoke()
+                    app.stop_button.invoke()
                     self.assertFalse(app.upload_enabled)
 
                     def button(text):

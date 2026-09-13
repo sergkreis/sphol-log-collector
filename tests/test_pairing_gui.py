@@ -128,7 +128,9 @@ class PairingCallbacks(unittest.TestCase):
         app.network_tick()
         app.work.assert_not_called()
         self.assertFalse(app.upload_enabled)
-        app.enable()
+        app.tailer = object()
+        app.start()
+        self.assertTrue(app.upload_enabled)
         for _ in range(3):
             app.network_tick()
         app.work.assert_not_called()

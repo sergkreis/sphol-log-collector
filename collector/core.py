@@ -149,14 +149,38 @@ class Tailer:
     @staticmethod
     def listener(f):
         f.seek(0)
-        header = f.read(16384).decode('utf-8-sig', errors='replace')
-        for line in header.splitlines():
+        # Header only: never mistake a later event's text for an identity.
+        names = set()
+        for _ in range(256):
+            raw = f.readline(MAX_LINE + 1)
+            if not raw:
+                return next(iter(names)) if len(names) == 1 else ''
+            if not raw.endswith(b'\n'):
+                return ''  # A partially written header is retried, never cached.
+            if len(raw) > MAX_LINE:
+                return ''
+            try:
+                line = raw.decode('utf-8-sig').strip()
+            except UnicodeError:
+                return ''
+            if line.startswith('['):
+                return next(iter(names)) if len(names) == 1 else ''
             if line.startswith(('Listener:', 'Слушатель:')):
-                return ''.join(c for c in line.split(':', 1)[1].strip() if c.isprintable())[:128]
+                name = line.split(':', 1)[1].strip()
+                if not name or len(name) > 128 or not all(c.isprintable() for c in name):
+                    return ''
+                names.add(name)
+            # A closing separator proves the header is complete even before events.
+            if names and line and set(line) == {'-'}:
+                return next(iter(names)) if len(names) == 1 else ''
+            if line.startswith(('Session started:', 'Сеанс начат:')):
+                return next(iter(names)) if len(names) == 1 else ''
+
         return ''
 
     def poll(self):
         accepted = 0
+        self.unattributed_files = 0
         for p in self.paths():
             try:
                 f = safe_open(p)
@@ -172,8 +196,10 @@ class Tailer:
                 state = self.files[key]
                 if s.st_size < state[0]:
                     state[:] = [0, self.listener(f), state[2] + 1, False]
+                state[1] = self.listener(f)
                 if not state[1]:
-                    state[1] = self.listener(f)
+                    self.unattributed_files += 1
+                    continue  # Preserve cursor for a late header; never enqueue anonymously.
                 f.seek(state[0])
                 for _ in range(256):
                     offset = f.tell()
