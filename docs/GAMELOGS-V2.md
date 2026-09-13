@@ -29,8 +29,10 @@ session recording remains local-only: its files are never used by either uploade
   route with envelope schema=2. The batch builder also supports unchanged schema 1
   records within a schema 2 envelope; the GUI deliberately keeps durable queues separate.
 - Authoritative implemented ACK is {accepted_ids: [...], rejected: [...]}, unchanged
-  from v1. The initial server v2 document said {accepted: [...]} in prose; actual server
-  and real loopback integration confirm accepted_ids/rejected. Never weaken ACK validation.
+  from v1. Both current contracts and real loopback integration agree on these exact
+  keys; `{accepted: [...]}` is invalid and acknowledges nothing. Never weaken ACK validation.
+
+Release gate: `SPHOL_BROWSER_GATE=1 SPHOL_SERVER_PATH=/path/to/server uv run --with playwright python -m unittest discover -s tests -v` exercises actual appended Gamelogs, scoped pairing, capacity retry, exact ACK, private storage, stored-killmail association, Chromium activity timeline at 1280/390/320, and continued v1 upload. Russian warp/module-range fixtures preserve read-only verified template shapes with synthetic names and ranges; no private source logs are included.
 - Unsupported/denied/unconfirmed v2 requests report that expanded mode is not confirmed
   or supported, preserve queues and leave legacy bindings intact. No deployed success
   is implied. Network/429/5xx upload failures retain records and schedule retries.

@@ -34,7 +34,7 @@ if SERVER:
             with closing(ExpandedQueue(root)) as pending:
                 tailer = capture(logs,pending,consent=True,credentials=credentials,started=datetime.now(timezone.utc)-timedelta(seconds=2))
                 with source.open('a',encoding='utf-8') as f:
-                    for category,text in [('notify','Fleet warp initiated.'),('None','Target destroyed.'),('info','<b>Synthetic private notification</b>'),('combat','Synthetic combat')]:
+                    for category,text in [('notify','Переход в варп-режим по приказу Synthetic Commander'),('None','Synthetic Scoop I* отключается, теряя руду в пространстве, так как вы отдалились на 1600,00 м от цели, что превышает радиус действия в 1500,00 м.'),('info','<b>Synthetic private notification</b>'),('combat','Synthetic combat')]:
                         f.write(datetime.now(timezone.utc).strftime('[ %Y.%m.%d %H:%M:%S ] ') + f'({category}) {text}\n')
                 self.assertEqual(tailer.poll(),4)
                 payload = self.t.build_batch(pending,credentials)
@@ -49,6 +49,56 @@ if SERVER:
                 with self.api.transaction() as con:
                     self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],4)
                     self.assertEqual(con.execute('SELECT count(*) FROM collector_events').fetchone()[0],0)
+                # Stored killmail anchors, real member HTTP, fixed private-safe projection.
+                import collector_sorties, server, http.client, json
+                from fixtures import attacker, killmail
+                row = killmail(attackers=[attacker(character_id=p, corporation_id=123) for p in (42,43,44)])
+                row.update(killmail_id=99001, killmail_time=payload['events'][0]['time'])
+                self.store.upsert_rows(123, [row, dict(row,killmail_id=99002)])
+                con = http.client.HTTPConnection('127.0.0.1', self.httpd.server_port, timeout=5)
+                con.request('GET', '/api/activity-records', headers={'Cookie':server.SSO_COOKIE+'=synthetic-only'})
+                response = con.getresponse(); raw = response.read().decode(); con.close()
+                self.assertEqual(response.status,200)
+                activity = json.loads(raw)
+                events = [e for episode in activity['episodes'] for e in episode['events']]
+                self.assertEqual({e['signal'] for e in events}, {'fleet_warp','module_range'})
+                self.assertTrue(all(e['sortieKey'] for e in activity['episodes']))
+                for secret in ('Synthetic Commander','Synthetic Scoop','Synthetic private notification','Synthetic combat'):
+                    self.assertNotIn(secret,raw)
+                self.assertIn('Synthetic private notification',json.dumps(self.api.private_events(42)))
+                self.assertEqual(self.api.private_events(999),[])
+                if os.environ.get('SPHOL_BROWSER_GATE') == '1':
+                    import re
+                    from playwright.sync_api import sync_playwright
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        base = f'http://127.0.0.1:{self.httpd.server_port}'
+                        for width in (1280,390,320):
+                            context = browser.new_context(viewport={'width':width,'height':900})
+                            context.add_cookies([{'name':server.SSO_COOKIE,'value':'synthetic-only','url':base}])
+                            page = context.new_page()
+                            html = re.sub(r'<script\b[^>]*>[\s\S]*?</script>', '', (Path(SERVER)/'index.html').read_text())
+                            page.route(base+'/',lambda route:route.fulfill(content_type='text/html',body=html))
+                            page.goto(base)
+                            page.add_script_tag(content=(Path(SERVER)/'killboard.js').read_text())
+                            page.evaluate("bindUi(); state.locked=false; state.session={loggedIn:true}; document.querySelector('[data-view=records]').hidden=false")
+                            page.locator('[data-view=records]').click()
+                            page.locator('#activityRecords summary').first.click()
+                            rendered = page.locator('#activityRecords').inner_text()
+                            self.assertIn('Выполняется варп флота.',rendered)
+                            self.assertIn('Цель вне радиуса действия модуля.',rendered)
+                            self.assertNotIn('Synthetic private notification',rendered)
+                            self.assertTrue(page.locator('#activityRecords').evaluate('(e)=>e.scrollWidth<=e.clientWidth'))
+                            context.close()
+                        browser.close()
+                # Existing v1 credential still captures and uploads independently.
+                with closing(self.core.PendingQueue(root/'legacy.sqlite')) as old_queue:
+                    old_tailer = self.core.Tailer(logs,old_queue,started=datetime.now(timezone.utc)-timedelta(seconds=2))
+                    with source.open('a',encoding='utf-8') as f:
+                        f.write(datetime.now(timezone.utc).strftime('[ %Y.%m.%d %H:%M:%S ] (combat) 100 damage to Synthetic Target\n'))
+                    self.assertEqual(old_tailer.poll(),1)
+                    self.t.Uploader(legacy).upload(old_queue)
+                    self.assertEqual(old_queue.count(),0)
                 # Exact stable retry is acknowledged, not duplicated.
                 self.assertEqual(self.request('events',payload,token=credentials['access_token'])[1]['accepted_ids'],[e['id'] for e in payload['events']])
 else:
