@@ -62,6 +62,8 @@ class ConnectedApp(App):
             self.connection.config(text='Сохранённая привязка недоступна или истекла. Удалите её и привяжите персонажа заново.')
         self.refresh_controls()
         window.after(250, self.network_tick)
+        from .expanded_gui import ExpandedControls
+        self.expanded = ExpandedControls(self)
 
     def refresh_controls(self):
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
@@ -128,6 +130,8 @@ class ConnectedApp(App):
 
     def stop(self):
         self.upload_enabled = False
+        if getattr(self, 'expanded', None):
+            self.expanded.stop()
         super().stop()
         if hasattr(self, 'connection'):
             self.connection.config(text='Новая отправка остановлена; уже отправленный запрос может завершиться. Очередь сохранена.')
@@ -138,6 +142,14 @@ class ConnectedApp(App):
             messagebox.showwarning('Запрос выполняется', 'Дождитесь завершения запроса перед удалением очереди.')
             return
         super().clear()
+
+    def close(self):
+        expanded = getattr(self, 'expanded', None)
+        if expanded and expanded.queue.count() and not messagebox.askyesno('Есть очередь v2', 'Сохранить неотправленную очередь всех Gamelogs и выйти? Фонового процесса не останется.'):
+            return
+        # Base close may be cancelled by the independent legacy queue warning.
+        if super().close() and expanded:
+            expanded.close()
 
     def unpair(self):
         if self.busy:

@@ -29,7 +29,7 @@ class ListenerTests(unittest.TestCase):
             try:
                 t = Tailer(root, q, datetime(2030, 1, 1, tzinfo=timezone.utc))
                 self.assertEqual(t.poll(), 0)
-                self.assertEqual(t.unattributed_files, 1)
+                self.assertEqual(t.unattributed_files, 0)  # Empty/pre-login is inert.
                 p.write_bytes(HEADER + RAW)
                 self.assertEqual(t.poll(), 1)
                 self.assertEqual(q.batch()[0]['listener'], 'Synthetic One')

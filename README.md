@@ -7,13 +7,13 @@ Python 3.11+ with Tk: `python run_collector.py`. No administrator, installation,
 
 1. Pair with SPHOL; manually confirm the displayed code, member identity and characters in your browser at `https://sphol.com/collector/pair`. No password is entered in the collector.
 2. Click **Start capture** for new combat lines. Existing files start at EOF; stopped-time history is not backfilled.
-3. Click **Enable uploads** explicitly. Only exact server-approved character names may leave the computer. Pairing alone is not proof of a current connection; only exact server acknowledgement is reported as confirmed upload.
+3. **Start capture** also enables legacy combat uploads for the bound character. Only exact server-approved character names may leave the computer. Pairing alone is not proof of a current connection; only exact server acknowledgement is reported as confirmed upload.
 4. **Stop capture** also stops new uploads. An in-flight request may finish. Close exits; pending events survive and retry IDs do not change. Local unpair deletes credentials/pending after confirmation; revoke the installation separately on the website.
 
 No deployed server success is assumed. If endpoints are absent, authorization fails, or responses are malformed, pending remains and the UI reports failure. HTTP 401/403 pauses uploads. Retryable network/429/5xx errors back off. Permanent rejections stay pending and pause uploads; no silent deletion.
 
 ## Data boundary
-Only read-only, non-recursive Windows Documents (including redirected Documents)/`EVE/logs/Gamelogs/*.txt`. Only `(combat)` events; no Chatlogs, notify/jumps, browser credentials, EVE tokens or game memory. UTF-8 English/Russian listener headers; markup stripped and data remains untrusted/client-reported. Combat text can identify people/ships/activities.
+Only read-only, non-recursive Windows Documents (including redirected Documents)/`EVE/logs/Gamelogs/*.txt`. Legacy v1 sends only `(combat)` events with markup stripped. The separately consented [v2 mode](docs/GAMELOGS-V2.md) sends all Gamelogs categories, including potentially private notifications and original markup, after new scoped browser approval. Existing full local recording remains local-only and is never converted to cloud consent. No Chatlogs, diagnostics, browser credentials, EVE tokens or game memory. UTF-8 English/Russian listener headers; all data remains untrusted/client-reported. Combat text can identify people/ships/activities.
 
 Queue: `%LOCALAPPDATA%/SPHOLLogCollector/pending.sqlite3`, unencrypted, max 10,000 events / 16 MiB payload, no eviction. Windows CurrentUser DPAPI protects `credentials.dpapi`; no plaintext fallback. Delete pending is not forensic erasure. Unapproved-character events remain pending visibly and do not block approved-character selection. Only accepted IDs from a complete validated response are removed.
 

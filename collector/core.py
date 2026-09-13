@@ -117,11 +117,12 @@ class PendingQueue:
 
 class Tailer:
     """One foreground capture session. Existing files start at EOF, not history."""
-    def __init__(self, root: Path, queue: PendingQueue, started=None):
+    def __init__(self, root: Path, queue: PendingQueue, started=None, parser=parse_line):
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
             raise OSError('Gamelogs directory is missing')
         self.queue = queue
+        self.parser = parser
         self.started = started or datetime.now(timezone.utc)
         self.run_id = uuid.uuid4().hex
         self.files = {}
@@ -198,7 +199,16 @@ class Tailer:
                     state[:] = [0, self.listener(f), state[2] + 1, False]
                 state[1] = self.listener(f)
                 if not state[1]:
-                    self.unattributed_files += 1
+                    # Pre-login files with only a header are normal, not a failure.
+                    # Preserve the cursor so a late listener can still attribute events.
+                    f.seek(state[0])
+                    for _ in range(256):
+                        candidate = f.readline(MAX_LINE + 1)
+                        if not candidate:
+                            break
+                        if candidate.endswith(b'\n') and self.parser(candidate):
+                            self.unattributed_files += 1
+                            break
                     continue  # Preserve cursor for a late header; never enqueue anonymously.
                 f.seek(state[0])
                 for _ in range(256):
@@ -216,7 +226,7 @@ class Tailer:
                         continue
                     if not raw.endswith(b'\n'):
                         break  # Keep offset; retry whole UTF-8 line after next append.
-                    event = parse_line(raw, state[1])
+                    event = self.parser(raw, state[1])
                     if event and datetime.fromisoformat(event['time']) >= self.started:
                         identity = f'{self.run_id}:{key}:{state[2]}:{offset}'
                         event_id = hashlib.sha256(identity.encode()).hexdigest()

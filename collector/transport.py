@@ -92,7 +92,7 @@ def validate_credentials(data):
     keys = {'access_token', 'token_type', 'scope', 'installation_id', 'expires_at', 'characters'}
     if not isinstance(data, dict) or set(data) != keys:
         raise ProtocolError('Invalid credentials response')
-    if not opaque(data['access_token']) or data['token_type'] != 'Bearer' or data['scope'] != 'combat:write':
+    if not opaque(data['access_token']) or data['token_type'] != 'Bearer' or data['scope'] not in ('combat:write', 'gamelogs:write'):
         raise ProtocolError('Invalid credential scope')
     if not isinstance(data['installation_id'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', data['installation_id']):
         raise ProtocolError('Invalid installation')
@@ -114,7 +114,10 @@ def validate_credentials(data):
 
 
 class Pairing:
-    def __init__(self, http=None):
+    def __init__(self, http=None, scope='combat:write'):
+        if scope not in ('combat:write', 'gamelogs:write'):
+            raise ProtocolError('Invalid requested scope')
+        self.scope = scope
         self.http = http or HTTPS()
         self.verifier = secrets.token_urlsafe(32)
         self.deadline = self.next_poll = 0
@@ -123,7 +126,8 @@ class Pairing:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode('ascii')).digest()).rstrip(b'=').decode()
         status, data = self.http.post('/api/collector/v1/pairings', {
             'challenge': challenge, 'challenge_method': 'S256', 'client_version': '0.2.0',
-            'device_label': 'SPHOL Windows collector'})
+            'device_label': 'SPHOL Windows collector',
+            **({'scope': self.scope} if self.scope != 'combat:write' else {})})
         keys = {'device_secret', 'user_code', 'verification_uri', 'expires_in', 'interval'}
         if status not in (200, 201) or not isinstance(data, dict) or set(data) != keys:
             raise ProtocolError('Invalid pairing response')
@@ -152,12 +156,16 @@ class Pairing:
         if status != 200:
             raise HTTPFailure(status)
         result = validate_credentials(data)
+        if result['scope'] != self.scope:
+            raise ProtocolError('Requested scope was not approved; expanded mode unavailable')
         self.deadline = 0  # Redemption must never be repeated.
         self.secret = self.verifier = ''
         return result
 
 
 def build_batch(queue, credentials):
+    expanded = credentials['scope'] == 'gamelogs:write'
+    schema = 2 if expanded else 1
     names = {c['name'] for c in credentials['characters']}
     events = []
     for event in queue.batch(100):
@@ -165,20 +173,24 @@ def build_batch(queue, credentials):
             continue
         if not isinstance(event.get('id'), str) or not re.fullmatch('[0-9a-f]{64}', event['id']):
             raise ProtocolError('Malformed pending event; delete pending to recover')
-        if (set(event) != {'id', 'schema', 'time', 'type', 'listener', 'text'}
-                or type(event['schema']) is not int or event['schema'] != 1 or event['type'] != 'combat'
+        v2 = expanded and event.get('schema') == 2
+        keys = {'id', 'schema', 'time', 'type', 'listener', 'text'} | ({'category'} if v2 else set())
+        if (set(event) != keys
+                or type(event['schema']) is not int or event['schema'] != (2 if v2 else 1)
+                or event['type'] != ('game-event' if v2 else 'combat')
+                or (v2 and (not isinstance(event.get('category'), str) or not re.fullmatch('[A-Za-z0-9_-]{1,32}', event['category'])))
                 or not isinstance(event['text'], str) or not event['text'] or len(event['text'].encode('utf-8')) > 8192
                 or not event['text'].isprintable() or not isinstance(event['listener'], str)
                 or not 1 <= len(event['listener']) <= 128 or not event['listener'].isprintable()):
             raise ProtocolError('Malformed pending event; delete pending to recover')
         expiry(event['time'])  # Strict UTC format, without treating old events as credential expiry.
-        candidate = {'schema': 1, 'events': events + [event]}
+        candidate = {'schema': schema, 'events': events + [event]}
         if len(encode(candidate)) > MAX_BODY:
             if not events:
                 raise ProtocolError('Oversized pending event; delete pending to recover')
             break
         events.append(event)
-    return {'schema': 1, 'events': events}
+    return {'schema': schema, 'events': events}
 
 
 def validate_ack(data, events):

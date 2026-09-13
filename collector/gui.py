@@ -97,7 +97,8 @@ class App:
 
     def capture_controls(self):
         self.start_button.config(state='disabled' if self.tailer else 'normal')
-        self.stop_button.config(state='normal' if self.tailer or getattr(self, 'local_capture', None) or getattr(self, 'upload_enabled', False) else 'disabled')
+        expanded = getattr(self, 'expanded', None)
+        self.stop_button.config(state='normal' if self.tailer or getattr(self, 'local_capture', None) or getattr(self, 'upload_enabled', False) or (expanded and (expanded.enabled or expanded.tailer)) else 'disabled')
 
     def start(self):
         if self.tailer is not None:
@@ -133,7 +134,7 @@ class App:
         if self.tailer:
             try:
                 self.tailer.poll()
-                self.status.set('Сбор включён — читаются новые боевые события.' if not self.tailer.unattributed_files else 'Есть журналы без проверенного заголовка персонажа: чтение этих файлов приостановлено, очередь сохранена.')
+                self.status.set('Сбор включён — читаются новые боевые события.' if not self.tailer.unattributed_files else 'Сбор включён. Отдельные события ждут проверенного заголовка персонажа; остальные журналы читаются.')
             except QueueFull:
                 self.status.set('Сбор приостановлен: очередь заполнена. Эти данные ещё не отправлены.')
             except Exception:
@@ -144,11 +145,12 @@ class App:
 
     def close(self):
         if self.queue.count() and not messagebox.askyesno('Есть неотправленные события', 'Сохранить очередь на диске и выйти? Эти события ещё не отправлены. Фоновый процесс не останется.'):
-            return
+            return False
         self.stop_local()
         self.tailer = None
         self.queue.close()
         self.window.destroy()
+        return True
 
 
 def main():
