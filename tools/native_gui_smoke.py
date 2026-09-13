@@ -38,6 +38,17 @@ class NativeGuiSmoke(unittest.TestCase):
                 try:
                     app = ConnectedApp(window, root, queue)
                     window.update()
+                    # Initialization and independent default-off consent in real Tk.
+                    self.assertFalse(app.expanded.enabled)
+                    self.assertIsNone(app.expanded.tailer)
+                    self.assertEqual(app.expanded.queue.count(), 0)
+                    self.assertTrue(app.expanded.start_button.winfo_viewable())
+                    self.assertEqual(app.expanded.approve_button.cget('text'), 'Подтвердить v2 в браузере…')
+                    with patch('collector.expanded_gui.messagebox.askyesno', return_value=False), patch.object(app.expanded, 'work') as work:
+                        app.expanded.approve_button.invoke()
+                        work.assert_not_called()
+                    self.assertIsNone(app.expanded.pairing)
+                    self.assertFalse(app.expanded.enabled)
                     self.assertTrue(window.winfo_viewable())
                     self.assertEqual('Персонаж не привязан', app.identity.cget('text'))
                     self.assertFalse(app.upload_enabled)

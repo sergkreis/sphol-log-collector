@@ -20,6 +20,15 @@ jobs:
         run: python -m tools.native_gui_smoke
       - run: python -m pip install --require-hashes --only-binary=":all:" -r requirements-build.txt
       - run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name SPHOLLogCollector run_collector.py
+      - name: Frozen EXE native Tk and independent v2 panel smoke
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'frozen-smoke.txt'
+          $process = Start-Process -FilePath dist/SPHOLLogCollector.exe -ArgumentList @('--synthetic-smoke-report', "`"$report`"") -PassThru
+          if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Frozen smoke timed out' }
+          if (Test-Path $report) { Get-Content $report }
+          if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Frozen smoke failed' }
+          if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
       - shell: pwsh
         run: |
           $hash = (Get-FileHash dist/SPHOLLogCollector.exe -Algorithm SHA256).Hash.ToLower()
