@@ -20,7 +20,7 @@ def apply_theme(window):
     style.configure('TLabel', background=BG, foreground=FG)
     style.configure('Muted.TLabel', foreground=MUTED)
     style.configure('Title.TLabel', font=(font[0], 18, 'bold'))
-    style.configure('Status.TLabel', font=(font[0], 20, 'bold'))
+    style.configure('Status.TLabel', font=(font[0], 16, 'bold'))
     style.configure('Metric.TLabel', font=(font[0], 25, 'bold'))
     style.configure('Small.TLabel', font=(font[0], 9), foreground=MUTED)
     style.configure('Warning.TLabel', foreground='#e5c48b')

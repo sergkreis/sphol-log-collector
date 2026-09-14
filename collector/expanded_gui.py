@@ -17,13 +17,18 @@ class ExpandedControls:
         self.uploader = self.pairing = self.tailer = None
         self.busy = self.enabled = self.closed = False
         self.results = queue.Queue()
-        frame = ttk.LabelFrame(app.network_area, text='Наблюдения полёта · отдельное разрешение', padding=8)
+        frame = ttk.Frame(app.network_area)
         frame.pack(fill='x', pady=(8, 0))
         self.ack_count = 0
-        ttk.Label(frame, text='Только распознанные сигналы без личных уведомлений и маршрутов. Локальная запись НЕ отправляется.', wraplength=620).pack(anchor='w')
-        self.status = ttk.Label(frame, text='Отправка v2 выключена. Нужно отдельное согласие и подтверждение в браузере.', wraplength=620)
+        self.problem = False
+        self.baseline = self.queue.inserted_count
+        ttk.Label(frame, text='Боевые события + наблюдения', style='Muted.TLabel').pack(anchor='w')
+        ttk.Label(frame, text='Варп флота · дальность модуля · неуязвимость цели. Без Chatlogs и маршрутов.', style='Small.TLabel', wraplength=700).pack(anchor='w')
+        self.summary = ttk.Label(frame, wraplength=700)
+        self.summary.pack(anchor='w', pady=(6, 0))
+        self.status = ttk.Label(app.settings, text='Отправка v2 выключена. Нужно отдельное согласие и подтверждение в браузере.', wraplength=620)
         self.status.pack(anchor='w')
-        self.pending = ttk.Label(frame)
+        self.pending = ttk.Label(app.settings)
         self.pending.pack(anchor='w')
 
         from .gui import tk
@@ -32,14 +37,14 @@ class ExpandedControls:
         # Code is displayed only while browser approval is pending.
         buttons = ttk.Frame(frame)
         buttons.pack(anchor='w')
-        self.approve_button = ttk.Button(buttons, text='Разрешить наблюдения в браузере…', command=self.approve)
+        self.approve_button = ttk.Button(buttons, text='Разрешить наблюдения', command=self.approve)
         self.approve_button.pack(side='left')
         self.start_button = ttk.Button(buttons, text='Включить отправку сигналов…', command=self.start)
         # Main capture button controls both approved streams.
         self.stop_button = ttk.Button(buttons, text='Остановить v2', command=self.stop)
         # Main stop always stops both streams.
         ttk.Button(app.danger_area, text='Удалить очередь наблюдений…', command=self.clear).pack(side='left')
-        self.last_ack = ttk.Label(frame, text='Наблюдения: подтверждения сервера ещё не было.', wraplength=620)
+        self.last_ack = ttk.Label(app.settings, text='Наблюдения: подтверждения сервера ещё не было.', wraplength=620)
         self.last_ack.pack(anchor='w')
         try:
             credentials = self.store.load()
@@ -78,8 +83,10 @@ class ExpandedControls:
         try:
             self.tailer = capture(self.app.log_root, self.queue, consent=True, credentials=self.uploader.credentials)
             self.enabled = True
+            self.problem = False
             self.status.config(text='Наблюдения включены: только три разрешённых сигнала привязанного персонажа. Подтверждение сервера ещё ожидается.')
         except Exception:
+            self.problem = True
             self.status.config(text='Сбор v2 не начат: проверьте папку Gamelogs. Очередь сохранена.')
 
     def stop(self):
@@ -104,6 +111,7 @@ class ExpandedControls:
         else:
             self.busy = False
             if failed:
+                self.problem = True
                 self.stop()
                 self.pairing = None
                 self.code.set('')
@@ -129,6 +137,7 @@ class ExpandedControls:
                 snapshot, status = result
                 self.queue.acknowledge(snapshot.accepted)
                 if snapshot.accepted:
+                    self.problem = False
                     self.ack_count += len(snapshot.accepted)
                     self.last_ack.config(text=f'Сервер подтвердил наблюдения: {self.ack_count} за запуск · {time.strftime("%H:%M:%S")} (время компьютера)')
                 if status:
@@ -144,6 +153,7 @@ class ExpandedControls:
                 self.tailer.poll()
             except Exception:
                 self.tailer = None
+                self.problem = True
                 self.status.config(text='Сбор v2 остановлен: лимит очереди или ошибка чтения. Данные сохранены; оригиналы в Gamelogs.')
         if not self.busy:
             if self.pairing:
@@ -157,11 +167,25 @@ class ExpandedControls:
         from .queue_status import queue_summary
         names = {c['name'] for c in self.uploader.credentials['characters']} if self.uploader else set()
         self.pending.config(text='Наблюдения · ' + queue_summary(self.queue, names))
+        self.refresh_summary()
         if not self.code.get():
             self.code_field.pack_forget()
         self.approve_button.config(state='disabled' if self.busy or self.pairing or self.tailer else 'normal')
         self.start_button.config(state='disabled' if self.busy or self.pairing or self.tailer else 'normal')
         self.app.window.after(1000, self.tick)
+
+    def refresh_summary(self):
+        from .queue_status import queue_counts
+        names = {c['name'] for c in self.uploader.credentials['characters']} if self.uploader else set()
+        counts = queue_counts(self.queue, names)
+        if self.uploader and not self.uploader.paused:
+            self.approve_button.pack_forget()
+            self.summary.config(text=f'Наблюдения за запуск: собрано {self.queue.inserted_count - self.baseline} (все персонажи) · принято {self.ack_count} · к отправке {counts["eligible"]}')
+        else:
+            self.approve_button.pack(side='left')
+            self.summary.config(text='Наблюдения не отправляются · нужно разрешение')
+        from .dashboard import refresh
+        refresh(self.app)
 
     def close(self):
         self.closed = True

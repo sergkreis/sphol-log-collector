@@ -42,11 +42,11 @@ class App:
         ttk.Label(self.header, text='SPHOL', style='Title.TLabel').pack(side='left')
         ttk.Label(self.header, text='БОЕВЫЕ ЖУРНАЛЫ', style='Muted.TLabel').pack(side='left', padx=16)
         self.identity_area = ttk.Frame(frame)
-        self.identity_area.pack(fill='x', pady=(12, 16))
+        self.identity_area.pack(fill='x', pady=(8, 8))
         capture = ttk.Frame(frame)
         capture.pack(fill='x')
         self.capture_area = capture
-        ttk.Label(capture, textvariable=self.status, wraplength=620).pack(anchor='w')
+        ttk.Label(capture, textvariable=self.status, wraplength=620)  # diagnostic source, not a duplicate headline
         # Detailed queue breakdown lives in the collapsed diagnostics.
         buttons = ttk.Frame(capture)
         self.capture_buttons = buttons
@@ -58,10 +58,22 @@ class App:
         self.start_button.pack_forget()
         self.main_button.pack(side='left')
         self.network_area = ttk.Frame(frame)
-        self.network_area.pack(fill='x', pady=(16, 12))
+        self.network_area.pack(fill='x', pady=(8, 4))
         self.settings_button = ttk.Button(frame, text='Настройки и диагностика ▸', command=self.toggle_settings)
         self.settings_button.pack(anchor='w', pady=(8, 0))
-        self.settings = ttk.Frame(frame)
+        self.settings_host = ttk.Frame(frame)
+        self.settings_canvas = tk.Canvas(self.settings_host, height=190, highlightthickness=0, background='#171b20')
+        scrollbar = ttk.Scrollbar(self.settings_host, orient='vertical', command=self.settings_canvas.yview)
+        scrollbar.pack(side='right', fill='y')
+        self.settings_canvas.pack(side='left', fill='both', expand=True)
+        self.settings_canvas.configure(yscrollcommand=scrollbar.set)
+        self.settings = ttk.Frame(self.settings_canvas)
+        settings_item = self.settings_canvas.create_window((0, 0), window=self.settings, anchor='nw')
+        self.settings.bind('<Configure>', lambda e: self.settings_canvas.configure(scrollregion=self.settings_canvas.bbox('all')))
+        self.settings_canvas.bind('<Configure>', lambda e: self.settings_canvas.itemconfigure(settings_item, width=e.width))
+        window.bind('<MouseWheel>', lambda e: self.settings_canvas.yview_scroll(-1 if e.delta > 0 else 1, 'units') if self.settings_open else None)
+        window.bind('<Button-4>', lambda e: self.settings_canvas.yview_scroll(-1, 'units') if self.settings_open else None)
+        window.bind('<Button-5>', lambda e: self.settings_canvas.yview_scroll(1, 'units') if self.settings_open else None)
         self.settings_open = False
         self.danger_area = ttk.Frame(self.settings)
         self.danger_area.pack(fill='x', pady=12)
@@ -81,10 +93,10 @@ class App:
         ttk.Label(frame, text='Только новые боевые строки. Без чатов, памяти игры, паролей и фоновой службы. Отправка — только по вашему разрешению.', wraplength=620).pack(anchor='w')
         from .dashboard import Dashboard
         self.dashboard = Dashboard(self, self.capture_area)
-        self.dashboard.heading.pack(before=self.capture_area.winfo_children()[0], anchor='w', pady=(0, 8))
-        ttk.Label(self.network_area, text='Боевые события + отдельно разрешённые наблюдения · без чатов и маршрутов', style='Muted.TLabel').pack(anchor='w', pady=(0, 10))
+        self.dashboard.heading.pack(before=self.capture_area.pack_slaves()[0], anchor='w', pady=(0, 8))
+
         self.footer = ttk.Frame(self.frame)
-        self.footer.pack(side='bottom', fill='x', pady=(16, 0))
+        self.footer.pack(side='bottom', fill='x', pady=(8, 0))
         ttk.Separator(self.footer).pack(fill='x', pady=(0, 12))
         window.protocol('WM_DELETE_WINDOW', self.close)
         self.tick()
@@ -93,11 +105,15 @@ class App:
         self.settings_open = not self.settings_open
         self.settings_button.config(text='Настройки и диагностика ▾' if self.settings_open else 'Настройки и диагностика ▸')
         if self.settings_open:
-            self.settings.pack(fill='x', pady=8)
+            self.capture_area.pack_forget()
+            self.network_area.pack_forget()
+            self.settings_host.pack(fill='both', expand=True, pady=8)
         else:
-            self.settings.pack_forget()
+            self.settings_host.pack_forget()
+            self.capture_area.pack(fill='x', after=self.identity_area)
+            self.network_area.pack(fill='x', pady=(8, 4), after=self.capture_area)
         self.window.update_idletasks()
-        self.window.geometry(f'780x{max(700, self.frame.winfo_reqheight())}')
+        self.window.geometry('780x750' if self.settings_open else '780x700')
 
     def toggle_capture(self):
         if self.stop_button.instate(['!disabled']):

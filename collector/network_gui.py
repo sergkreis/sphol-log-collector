@@ -32,9 +32,9 @@ class ConnectedApp(App):
         self.identity = ttk.Label(self.identity_area, text='Персонаж не привязан', style='Title.TLabel', wraplength=620)
         self.identity.pack(anchor='w')
         self.binding_state = ttk.Label(self.identity_area, text='Привязка ещё не настроена', style='Muted.TLabel')
-        self.binding_state.pack(anchor='w', pady=(4, 0))
+
         self.upload_state = ttk.Label(self.network_area, font=('Segoe UI', 10, 'bold'), wraplength=620)
-        self.upload_state.pack(anchor='w')
+
         self.last_ack = ttk.Label(self.network_area, text='Подтверждение сервера: в этом запуске ещё не получено.', wraplength=620)
         self.last_ack.pack(anchor='w', pady=(6, 0))
         self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий на sphol.com.', wraplength=620)
@@ -71,7 +71,7 @@ class ConnectedApp(App):
         self.open_site = ttk.Button(self.footer, text='Открыть SPHOL', command=lambda: webbrowser.open(ORIGIN))
         self.open_site.pack(side='right')
         window.update_idletasks()
-        window.geometry(f'780x{max(700, self.frame.winfo_reqheight())}')
+        window.geometry('780x700')
 
     def refresh_controls(self):
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
@@ -119,7 +119,7 @@ class ConnectedApp(App):
         c = self.uploader.credentials
         self.identity.config(text=', '.join(x['name'] for x in c['characters']))
         if hasattr(self, 'binding_state'):
-            self.binding_state.config(text='Привязка сохранена · отдельно от сбора и связи')
+            self.binding_state.config(text='Привязка сохранена')
         self.connection.config(text='Привязка действует до ' + c['expires_at'] + '. «Начать сбор» включает отправку; остановка сохраняет очередь.')
 
     def work(self, kind, function):

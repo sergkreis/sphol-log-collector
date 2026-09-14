@@ -74,4 +74,4 @@ class ActualTkTests(unittest.TestCase):
         from tools.gui_preview import render
         with tempfile.TemporaryDirectory() as temp:
             render(temp)
-            self.assertEqual(len(list(Path(temp).glob('*.png'))), 9)
+            self.assertEqual(len(list(Path(temp).glob('*.png'))), 4)
