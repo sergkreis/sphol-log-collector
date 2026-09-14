@@ -82,7 +82,7 @@ class Dashboard:
             self.warning.pack_forget()
         self.detail.config(text=f"Очередь: для привязки — {counts['eligible']}, без персонажа — {counts['unknown']}, остальные — {counts['other']}.\nЗаписи без персонажа не отправляются и не меняют статус текущего сбора. Автоматического присвоения персонажа нет.")
         if hasattr(app, 'last_ack'):
-            text = 'Боевые: сервер ещё не подтвердил события'
+            text = 'Новых событий пока нет' if not eligible else 'События в очереди · ждём подтверждения отправки'
             if self.ack_at is not None:
                 seconds = max(0, int(time.monotonic() - self.ack_at))
                 age = f'{seconds} с' if seconds < 60 else f'{seconds // 60} мин'

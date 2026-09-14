@@ -32,6 +32,8 @@ def render(destination):
         with tempfile.TemporaryDirectory() as temp, \
                 patch.object(socket.socket, 'connect', side_effect=AssertionError('Network forbidden')), \
                 patch.object(socket.socket, 'connect_ex', side_effect=AssertionError('Network forbidden')), \
+                patch('collector.network_gui.CredentialStore.load', return_value=None), \
+                patch('collector.connection_status.probe', return_value=None), \
                 patch('webbrowser.open'):
             root = Path(temp)
             logs = root / 'Gamelogs'
