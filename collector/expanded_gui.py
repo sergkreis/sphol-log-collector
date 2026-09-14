@@ -1,4 +1,4 @@
-"""Independent opt-in schema 2 controls; never consume local-only recordings."""
+"""Current authorized observations; one Start/Stop with combat capture."""
 import queue
 import threading
 import time
@@ -12,21 +12,21 @@ from .transport import Pairing, Uploader, PAIR_URI
 class ExpandedControls:
     def __init__(self, app):
         self.app = app
-        self.queue = ExpandedQueue(app.queue.path.parent)
-        self.store = CredentialStore(app.queue.path.parent / 'credentials-v2.dpapi')
+        self.queue = ExpandedQueue(app.queue.path.parent / 'observations' / 'unbound')
+        self.store = CredentialStore(app.queue.path.parent / 'observations' / 'credentials.dpapi')
         self.uploader = self.pairing = self.tailer = None
         self.busy = self.enabled = self.closed = False
         self.results = queue.Queue()
         frame = ttk.Frame(app.network_area)
         frame.pack(fill='x', pady=(8, 0))
         self.ack_count = 0
-        self.problem = False
+        self.problem = self.capture_problem = False
         self.baseline = self.queue.inserted_count
         ttk.Label(frame, text='Боевые события + наблюдения', style='Muted.TLabel').pack(anchor='w')
         ttk.Label(frame, text='Варп флота · дальность модуля · неуязвимость цели. Без Chatlogs и маршрутов.', style='Small.TLabel', wraplength=700).pack(anchor='w')
         self.summary = ttk.Label(frame, wraplength=700)
         self.summary.pack(anchor='w', pady=(6, 0))
-        self.status = ttk.Label(app.settings, text='Отправка v2 выключена. Нужно отдельное согласие и подтверждение в браузере.', wraplength=620)
+        self.status = ttk.Label(app.settings, text='Наблюдения выключены. «Начать сбор» включает все разрешённые события.', wraplength=620)
         self.status.pack(anchor='w')
         self.pending = ttk.Label(app.settings)
         self.pending.pack(anchor='w')
@@ -46,14 +46,23 @@ class ExpandedControls:
         ttk.Button(app.danger_area, text='Удалить очередь наблюдений…', command=self.clear).pack(side='left')
         self.last_ack = ttk.Label(app.settings, text='Наблюдения: подтверждения сервера ещё не было.', wraplength=620)
         self.last_ack.pack(anchor='w')
-        try:
-            credentials = self.store.load()
-            if credentials and credentials['scope'] == SCOPE:
-                self.uploader = Uploader(credentials)
-                self.status.config(text='Привязка v2: ' + ', '.join(c['name'] for c in credentials['characters']) + '. Отправка выключена.')
-        except Exception:
-            self.status.config(text='Привязка v2 недоступна; подтвердите заново. Старая боевая привязка не изменена.')
+        if app.uploader and app.uploader.credentials['scope'] == SCOPE:
+            self.bind(app.uploader.credentials)
         self.tick()
+
+    def bind(self, credentials):
+        from .transport import validate_credentials
+        validate_credentials(credentials)
+        installation = credentials['installation_id']
+        path = self.app.queue.path.parent / 'observations' / installation
+        if self.queue.path.parent != path:
+            if self.busy or self.tailer:
+                raise RuntimeError('Observation stream is active')
+            new_queue = ExpandedQueue(path)
+            self.queue.close()
+            self.queue = new_queue
+            self.baseline = self.queue.inserted_count
+        self.uploader = Uploader(credentials)
 
     def work(self, kind, function):
         self.busy = True
@@ -83,7 +92,7 @@ class ExpandedControls:
         try:
             self.tailer = capture(self.app.log_root, self.queue, consent=True, credentials=self.uploader.credentials)
             self.enabled = True
-            self.problem = False
+            self.problem = self.capture_problem = False
             self.status.config(text='Наблюдения включены: только три разрешённых сигнала привязанного персонажа. Подтверждение сервера ещё ожидается.')
         except Exception:
             self.problem = True
@@ -153,6 +162,7 @@ class ExpandedControls:
                 self.tailer.poll()
             except Exception:
                 self.tailer = None
+                self.capture_problem = True
                 self.problem = True
                 self.status.config(text='Сбор v2 остановлен: лимит очереди или ошибка чтения. Данные сохранены; оригиналы в Gamelogs.')
         if not self.busy:

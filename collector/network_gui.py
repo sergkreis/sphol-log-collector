@@ -37,7 +37,7 @@ class ConnectedApp(App):
 
         self.last_ack = ttk.Label(self.network_area, text='Подтверждение сервера: в этом запуске ещё не получено.', wraplength=620)
         self.last_ack.pack(anchor='w', pady=(6, 0))
-        self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий на sphol.com.', wraplength=620)
+        self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий и разрешённых наблюдений на sphol.com.', wraplength=620)
         self.connection.pack(anchor='w', pady=(6, 8))
         self.code_frame = code_frame = ttk.Frame(self.network_area)
         ttk.Label(code_frame, text='Код привязки:').pack(side='left', padx=(0, 8))
@@ -66,6 +66,8 @@ class ConnectedApp(App):
         window.after(250, self.network_tick)
         from .expanded_gui import ExpandedControls
         self.expanded = ExpandedControls(self)
+        from .legacy_backlog import LegacyBacklog
+        self.legacy = LegacyBacklog(self)
         from .update_gui import UpdateControls
         self.updates = UpdateControls(self)
         self.open_site = ttk.Button(self.footer, text='Открыть SPHOL', command=lambda: webbrowser.open(ORIGIN))
@@ -90,7 +92,7 @@ class ConnectedApp(App):
         elif self.uploader and self.uploader.paused:
             self.upload_state.config(text='Отправка приостановлена · очередь сохранена, см. диагностику')
         elif self.uploader and not self.upload_enabled:
-            self.upload_state.config(text='Отправка выключена. «Начать сбор» отправляет боевые события на sphol.com')
+            self.upload_state.config(text='Отправка выключена. «Начать сбор» отправляет все разрешённые события на sphol.com')
         self.capture_controls()
 
     def clear_pairing_code(self):
@@ -143,7 +145,7 @@ class ConnectedApp(App):
         if not messagebox.askyesno('Привязать персонажа?', 'Открыть sphol.com для подтверждения персонажа? После привязки «Начать сбор» автоматически отправляет его новые боевые события и сохранённую очередь на sphol.com. Остановка прекращает сбор и новые запросы. Пароль здесь не вводится.'):
             return
         self.pairing = Pairing(scope='gamelogs:write', browser=True, credentials=self.uploader.credentials if self.uploader else None)
-        self.connection.config(text='Получаем код привязки…')
+        self.connection.config(text='Открываем подтверждение в браузере…')
         self.work('pair', self.pairing.start)
 
     def start(self):
@@ -157,29 +159,24 @@ class ConnectedApp(App):
             self.pair()
             return
         if getattr(self, 'expanded', None):
-            legacy = self.expanded.uploader
-            if legacy and self.expanded.queue.count():
-                current_ids = {c['id'] for c in self.uploader.credentials['characters']}
-                legacy_ids = {c['id'] for c in legacy.credentials['characters']}
-                if current_ids != legacy_ids:
-                    self.expanded.problem = True
-                    self.connection.config(text='Сохранена очередь наблюдений другого персонажа. Сбор не начат: старая привязка и очередь сохранены без отправки. Нужна безопасная миграция очереди.')
-                    self.refresh_controls()
-                    return
-            # Drain legacy scoped queues under their original installation identity.
-            # A lost ACK must not become a new server event under a different ID.
-            if not self.expanded.uploader or not self.expanded.queue.count():
-                self.expanded.uploader = Uploader(self.uploader.credentials)
+            if self.expanded.busy:
+                self.connection.config(text='Завершается запрос наблюдений; повторите «Начать сбор». Очередь сохранена.')
+                return
+            self.expanded.bind(self.uploader.credentials)
         self.upload_problem = False
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
         expanded = getattr(self, 'expanded', None)
         if self.tailer and expanded and expanded.uploader:
             expanded.start(integrated=True)
+        if self.tailer and getattr(self, 'legacy', None):
+            self.legacy.authorize()
         self.refresh_controls()
 
     def stop(self):
         self.upload_enabled = False
+        if getattr(self, 'legacy', None):
+            self.legacy.stop()
         if getattr(self, 'expanded', None):
             self.expanded.stop()
         super().stop()
@@ -195,16 +192,19 @@ class ConnectedApp(App):
 
     def close(self):
         expanded = getattr(self, 'expanded', None)
-        if expanded and expanded.queue.count() and not messagebox.askyesno('Есть очередь v2', 'Сохранить неотправленную очередь всех Gamelogs и выйти? Фонового процесса не останется.'):
+        legacy = getattr(self, 'legacy', None)
+        if ((expanded and expanded.queue.count()) or (legacy and legacy.queue.count())) and not messagebox.askyesno('Есть очередь наблюдений', 'Сохранить неотправленные наблюдения и выйти? Фонового процесса не останется.'):
             return
         # Base close may be cancelled by the independent legacy queue warning.
         if super().close() and expanded:
             expanded.close()
+            if legacy:
+                legacy.close()
 
     def unpair(self):
         if self.busy or (getattr(self, 'expanded', None) and self.expanded.busy):
             return
-        if not messagebox.askyesno('Удалить привязку?', 'Удалить локальный ключ и ВСЮ очередь событий? Отозвать доступ устройства на сайте нужно отдельно.'):
+        if not messagebox.askyesno('Удалить привязку?', 'Удалить текущий локальный ключ и текущую очередь событий? Прежняя привязка наблюдений и её очередь сохранятся. Отозвать доступ устройства на сайте нужно отдельно.'):
             return
         self.stop()
         self.store.clear()

@@ -17,7 +17,7 @@ class SyntheticHTTP:
     offline = False
 
     def post(self, path, payload, token=None):
-        assert path == '/api/collector/v1/events'
+        assert path in ('/api/collector/v1/events', '/api/collector/v2/events')
         if self.offline:
             raise OSError('Synthetic offline')
         return 200, {'accepted_ids': [e['id'] for e in payload['events']], 'rejected': []}
@@ -49,7 +49,7 @@ def render(destination):
                     ttk.Label(app.frame, text='PREVIEW · синтетические данные · сеть заблокирована', style='Small.TLabel').pack(before=app.header, fill='x', pady=(0, 8))
                     http, expanded_http = SyntheticHTTP(), SyntheticHTTP()
                     credentials = {'access_token': 'synthetic-token-' * 3, 'token_type': 'Bearer',
-                        'scope': 'combat:write', 'installation_id': 'synthetic-preview',
+                        'scope': 'gamelogs:write', 'installation_id': 'a' * 32,
                         'characters': [{'id': 1, 'name': 'Synthetic Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'}
                     app.uploader = Uploader(credentials, http=http)
                     app.show_identity()
@@ -59,11 +59,17 @@ def render(destination):
                         app.expanded.approve_button.invoke()
                         pairing.assert_not_called()
                     assert app.expanded.tailer is None
-                    if scene != 'needs-approval':
-                        app.expanded.uploader = Uploader({**credentials, 'scope': 'gamelogs:write'}, http=expanded_http)
+                    if scene == 'needs-approval':
+                        app.uploader = Uploader({**credentials, 'scope': 'combat:write'}, http=http)
+                        with patch.object(app, 'pair') as pair:
+                            app.main_button.invoke()
+                        pair.assert_called_once()
+                        assert app.tailer is None and app.expanded.tailer is None
+                        app.uploader = Uploader(credentials, http=http)
                     app.main_button.invoke()
+                    app.expanded.uploader.http = expanded_http
                     assert app.tailer and app.upload_enabled
-                    assert bool(app.expanded.tailer) == (scene != 'needs-approval')
+                    assert app.expanded.tailer
                     with patch('collector.update_gui.os.name', 'nt'), patch('collector.update_gui.sys.frozen', True, create=True):
                         app.updates.refresh_button()
                         assert app.updates.button.instate(['disabled'])
@@ -90,10 +96,9 @@ def render(destination):
                     ack = app.dashboard.ack_at
                     app.network_tick()
                     assert app.dashboard.ack_at == ack
-                    if scene != 'needs-approval':
-                        settle(app.expanded, app.expanded.tick)
-                        assert app.expanded.ack_count == 2
-                        assert app.expanded.queue.count() == 0
+                    settle(app.expanded, app.expanded.tick)
+                    assert app.expanded.ack_count == 2
+                    assert app.expanded.queue.count() == 0
                     if scene == 'offline':
                         # Successful combat ACK cannot mask a failed observation stream.
                         expanded_http.offline = True
@@ -111,8 +116,8 @@ def render(destination):
                         app.expanded.uploader.failures = 1
                     app.expanded.refresh_summary()
                     window.update()
-                    assert app.expanded.approve_button.winfo_viewable() == (scene == 'needs-approval')
-                    assert [int(x.cget('text')) for x in app.dashboard.metrics] == [12, 12, 0]
+                    assert not app.expanded.approve_button.winfo_viewable()
+                    assert [int(x.cget('text')) for x in app.dashboard.metrics] == ([15, 14, 1] if scene == 'offline' else [14, 14, 0])
                     assert list(queue.db.execute('SELECT * FROM pending')) == legacy
                     if scene == 'settings':
                         app.settings_button.invoke()
@@ -146,6 +151,7 @@ def render(destination):
                     print(f'PASS isolated {scene}: bounds, consent, ACK, stop, update guard, legacy preservation')
                 finally:
                     app.expanded.close()
+                    app.legacy.close()
                     queue.close()
                     window.destroy()
             # Tk variables must be finalized on this thread, never by a later

@@ -11,7 +11,8 @@ from .version import VERSION
 
 def active(app):
     expanded = getattr(app, 'expanded', None)
-    return bool(app.tailer or app.local_capture or app.upload_enabled or app.busy or app.pairing or (expanded and (expanded.enabled or expanded.tailer or expanded.busy or expanded.pairing)))
+    legacy = getattr(app, 'legacy', None)
+    return bool((legacy and (legacy.enabled or legacy.busy)) or app.tailer or app.local_capture or app.upload_enabled or app.busy or app.pairing or (expanded and (expanded.enabled or expanded.tailer or expanded.busy or expanded.pairing)))
 
 
 class UpdateControls:
@@ -35,7 +36,7 @@ class UpdateControls:
         if self.busy:
             return
         if active(self.app):
-            messagebox.showwarning('Сначала остановите сбор', 'Остановите сбор, локальную запись и v2; дождитесь завершения запросов. Во время вылета обновление не выполняется.')
+            messagebox.showwarning('Сначала остановите сбор', 'Нажмите «Остановить сбор», остановите локальную запись; дождитесь завершения запросов. Во время вылета обновление не выполняется.')
             return
         self.busy = True
         self.button.config(state='disabled')
@@ -83,6 +84,8 @@ class UpdateControls:
             # No active workers or local file handles. Committed queue data remains.
             self.app.stop()
             self.app.expanded.close()
+            if getattr(self.app, 'legacy', None):
+                self.app.legacy.close()
             self.app.queue.close()
             updater.private_write(self.stage / 'apply', b'apply')
             self.app.window.destroy()

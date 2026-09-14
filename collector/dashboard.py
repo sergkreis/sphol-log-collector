@@ -58,15 +58,18 @@ class Dashboard:
         elif 'приостановлен' in status:
             heading = 'Сбор приостановлен'
         elif app.tailer:
-            heading = 'Сбор включён' if collected else 'Ждём боевые события'
+            heading = 'Сбор включён' if collected else 'Ждём события'
         else:
             heading = 'Сбор выключен'
         expanded = getattr(app, 'expanded', None)
         problems = []
         if getattr(app, 'upload_problem', False) or (getattr(app, 'uploader', None) and (app.uploader.failures or app.uploader.paused)):
             problems.append('боевые')
-        if expanded and expanded.uploader and (expanded.uploader.failures or expanded.uploader.paused or getattr(expanded, 'problem', False)):
+        if expanded and (getattr(expanded, 'capture_problem', False) or getattr(expanded, 'problem', False) or (expanded.uploader and (expanded.uploader.failures or expanded.uploader.paused))):
             problems.append('наблюдения')
+        legacy = getattr(app, 'legacy', None)
+        if legacy and legacy.queue.count() and (legacy.problem or (legacy.enabled and legacy.uploader and (legacy.uploader.failures or legacy.uploader.paused))):
+            problems.append('прежние наблюдения')
         if problems:
             heading += ' · не отправляются: ' + ', '.join(problems)
         elif app.tailer and not getattr(app, 'upload_enabled', False):
