@@ -31,7 +31,7 @@ class NativeGuiSmoke(unittest.TestCase):
             db = Path(temp) / 'pending.sqlite3'
             with closing(PendingQueue(db)) as queue, patch.object(
                 socket.socket, 'connect', side_effect=AssertionError('Network forbidden in smoke test')
-            ):
+            ), patch('collector.connection_status.probe', return_value=None):
                 window = tk.Tk()
                 callback_errors = []
                 window.report_callback_exception = lambda *args: callback_errors.append(args)

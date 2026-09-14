@@ -7,10 +7,11 @@ if __name__ == "__main__":
         import unittest
         from tools.native_gui_smoke import NativeGuiSmoke
         from tools.native_single_smoke import NativeSingleSmoke
+        from tools.connection_preview import NativeConnectionSmoke
         with open(sys.argv[2], 'w', encoding='utf-8') as report:
             result = unittest.TextTestRunner(stream=report, verbosity=2).run(
                 unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(case)
-                                   for case in (NativeGuiSmoke, NativeSingleSmoke)))
+                                   for case in (NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke)))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     if len(sys.argv) == 6 and sys.argv[1] == '--apply-update':
         from collector.updater import helper

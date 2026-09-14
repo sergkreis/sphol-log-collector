@@ -35,7 +35,6 @@ class ConnectedApp(App):
         self.connection_status = ConnectionStatus()
         self.connection_badge = ttk.Label(self.identity_area, text=LABELS['stopped'], wraplength=680)
         self.connection_badge.pack(anchor='w', pady=(4, 0))
-        ttk.Label(self.identity_area, text='Связь с сервером ≠ успешная отправка всех событий', style='Small.TLabel').pack(anchor='w')
         self.binding_state = ttk.Label(self.identity_area, text='Привязка ещё не настроена', style='Muted.TLabel')
 
         self.upload_state = ttk.Label(self.network_area, font=('Segoe UI', 10, 'bold'), wraplength=620)
@@ -84,7 +83,8 @@ class ConnectedApp(App):
         if hasattr(self, 'connection_status'):
             from .connection_status import LABELS
             state = self.connection_status.tick(self.uploader.credentials if self.uploader else None, bool(self.tailer))
-            self.connection_badge.config(text=LABELS[state], foreground='#80d8a0' if state == 'connected' else '#bcc5d3')
+            colors = {'connected': '#80d8a0', 'offline': '#ef8791', 'denied': '#ef8791', 'checking': '#e8be75'}
+            self.connection_badge.config(text=LABELS[state], foreground=colors.get(state, '#bcc5d3'))
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
         if hasattr(self, 'dashboard'):
             if self.uploader:

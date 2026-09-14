@@ -1,4 +1,4 @@
-"""Pinned released 0.3.0 helper replaces real collector, isolated CI only.
+"""Pinned released 0.3.1 helper replaces real collector, isolated CI only.
 No capture or pairing is started. Parent exit is forced in this fixture;
 this tests real replacement/relaunch, not the interactive confirmation dialog.
 """
@@ -15,8 +15,8 @@ from collector.credentials import CredentialStore
 from collector.expanded import ExpandedQueue
 from collector.updater import ASSET, clean_env, download
 
-# Downloaded and verified against GitHub release asset digest (v0.3.0).
-OLD_SHA = '9760cd68b4974b1784a42b61174b6175264c2e49ae10525a56c63167696f1cd0'
+# Verified against GitHub release asset digest (v0.3.1).
+OLD_SHA = '4e57ce25baf1f7424e2c22bffeb0fe4fcaaf0b2df5d80966c3e9a3567080a86c'
 
 
 def windows(target):
@@ -39,7 +39,7 @@ def wait_for(predicate, seconds=40):
 def main():
     assert os.name == 'nt', 'Windows required'
     replacement = Path(sys.argv[1]).absolute().read_bytes()
-    old = download('https://github.com/sergkreis/sphol-log-collector/releases/download/v0.3.0/' + ASSET, 128 * 1024 * 1024)
+    old = download('https://github.com/sergkreis/sphol-log-collector/releases/download/v0.3.1/' + ASSET, 128 * 1024 * 1024)
     assert hashlib.sha256(old).hexdigest() == OLD_SHA
     with tempfile.TemporaryDirectory(prefix='sphol-cross-version-') as temp:
         root = Path(temp)
