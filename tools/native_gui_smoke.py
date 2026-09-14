@@ -188,6 +188,8 @@ class NativeGuiSmoke(unittest.TestCase):
                         prompt.assert_called_once()
                     self.assertTrue(window.winfo_exists())
                     with patch('collector.gui.messagebox.askyesno', return_value=True):
+                        for callback in window.tk.call('after', 'info'):
+                            window.after_cancel(callback)
                         app.close()
                     with self.assertRaises(sqlite3.ProgrammingError):
                         queue.count()

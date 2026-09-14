@@ -3,6 +3,8 @@ from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import socket
+import os
+import subprocess
 import tempfile
 import time
 import tkinter as tk
@@ -12,6 +14,27 @@ from collector.core import PendingQueue
 from collector.expanded import ExpandedQueue, parse_game_line
 from collector.network_gui import ConnectedApp, Snapshot
 from collector.transport import Uploader
+from collector.transport import PAIR_URI
+
+
+def evidence(window, name):
+    """Opt-in synthetic window-only screenshot, never the whole desktop."""
+    destination = os.environ.get('SPHOL_SMOKE_EVIDENCE')
+    if not destination or os.name != 'nt':
+        return
+    window.update_idletasks()
+    path = Path(destination).absolute() / (name + '.png')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    x, y = window.winfo_rootx(), window.winfo_rooty()
+    w, h = window.winfo_width(), window.winfo_height()
+    env = os.environ.copy(); env['SPHOL_SMOKE_IMAGE'] = str(path)
+    script = ("Add-Type -AssemblyName System.Drawing; "
+              f"$b=New-Object System.Drawing.Bitmap({w},{h}); "
+              "$g=[System.Drawing.Graphics]::FromImage($b); "
+              f"$g.CopyFromScreen({x},{y},0,0,$b.Size); "
+              "$b.Save($env:SPHOL_SMOKE_IMAGE); $g.Dispose(); $b.Dispose()")
+    subprocess.run(['powershell', '-NoProfile', '-Command', script], env=env,
+                   check=True, timeout=15, capture_output=True)
 
 
 def credentials(name, char, installation):
@@ -21,6 +44,47 @@ def credentials(name, char, installation):
 
 
 class NativeSingleSmoke(unittest.TestCase):
+    def test_pending_browser_consent_default_off_and_reopen(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); logs = root/'Gamelogs'; logs.mkdir()
+            with closing(PendingQueue(root/'pending.sqlite3')) as queue, patch.object(
+                socket.socket, 'connect', side_effect=AssertionError('No network')
+            ), patch('collector.credentials.CredentialStore.load', return_value=None):
+                window = tk.Tk(); app = None
+                try:
+                    app = ConnectedApp(window, logs, queue); window.update()
+                    self.assertFalse(app.upload_enabled)
+                    self.assertFalse(app.expanded.enabled)
+                    self.assertIsNone(app.tailer)
+                    self.assertIsNone(app.expanded.tailer)
+                    with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work'):
+                        app.main_button.invoke()
+                    assert app.pairing is not None
+                    self.assertTrue(app.pairing.browser)
+                    self.assertEqual(app.pairing.scope, 'gamelogs:write')
+                    proof = 's'*43
+                    app.pairing.browser_uri = PAIR_URI + '#' + proof
+                    app.pairing.deadline = float('inf')
+                    app.results.put(('pair', proof, None))
+                    with patch.object(app, 'work'), patch('collector.network_gui.webbrowser.open') as browser:
+                        app.network_tick(); window.update()
+                        app.main_button.invoke()
+                        self.assertEqual(browser.call_count, 2)
+                        browser.assert_called_with(app.pairing.browser_uri)
+                    self.assertEqual(app.code_field.get(), '')
+                    self.assertTrue(app.copy_button.instate(['disabled']))
+                    self.assertFalse(app.upload_enabled)
+                    self.assertFalse(app.expanded.enabled)
+                    self.assertIsNone(app.tailer)
+                    self.assertIsNone(app.expanded.tailer)
+                    evidence(window, 'pending-consent')
+                finally:
+                    if app:
+                        app.expanded.close(); app.legacy.close()
+                    for callback in window.tk.call('after', 'info'):
+                        window.after_cancel(callback)
+                    window.destroy()
+
     def test_unified_metrics_stop_errors_and_legacy_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -66,6 +130,7 @@ class NativeSingleSmoke(unittest.TestCase):
                         app.expanded.tick()
                     app.dashboard.refresh()
                     self.assertEqual([w.cget('text') for w in app.dashboard.metrics], ['2','0','2'])
+                    evidence(window, 'single-start-combined')
                     # Current combat succeeds while observation transport fails.
                     app.expanded.uploader.failures = 1
                     snap = Snapshot(queue.batch()); snap.accepted = [e['id'] for e in snap.events]
@@ -73,6 +138,7 @@ class NativeSingleSmoke(unittest.TestCase):
                     app.network_tick()
                     self.assertIn('наблюдения', app.dashboard.heading.cget('text'))
                     self.assertEqual([w.cget('text') for w in app.dashboard.metrics], ['2','1','1'])
+                    evidence(window, 'one-stream-failure')
                     app.expanded.uploader.failures = 0
                     obs = Snapshot(app.expanded.queue.batch()); obs.accepted = [e['id'] for e in obs.events]
                     app.expanded.results.put(('upload', (obs, 'synthetic ACK'), False))
@@ -119,6 +185,8 @@ class NativeSingleSmoke(unittest.TestCase):
                 finally:
                     if app:
                         app.expanded.close(); app.legacy.close()
+                    for callback in window.tk.call('after', 'info'):
+                        window.after_cancel(callback)
                     window.destroy()
             with closing(ExpandedQueue(root)) as reopened:
                 self.assertEqual(reopened.count(), 0)

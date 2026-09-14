@@ -1,4 +1,4 @@
-"""Pinned released 0.2.1 helper replaces real collector, isolated CI only.
+"""Pinned released 0.3.0 helper replaces real collector, isolated CI only.
 No capture or pairing is started. Parent exit is forced in this fixture;
 this tests real replacement/relaunch, not the interactive confirmation dialog.
 """
@@ -15,7 +15,8 @@ from collector.credentials import CredentialStore
 from collector.expanded import ExpandedQueue
 from collector.updater import ASSET, clean_env, download
 
-OLD_SHA = '42e8a6b906ded9cfa126da018b353bb5862574c0e957f58f08e550962f703960'
+# Downloaded and verified against GitHub release asset digest (v0.3.0).
+OLD_SHA = '9760cd68b4974b1784a42b61174b6175264c2e49ae10525a56c63167696f1cd0'
 
 
 def windows(target):
@@ -38,7 +39,7 @@ def wait_for(predicate, seconds=40):
 def main():
     assert os.name == 'nt', 'Windows required'
     replacement = Path(sys.argv[1]).absolute().read_bytes()
-    old = download('https://github.com/sergkreis/sphol-log-collector/releases/download/v0.2.1/' + ASSET, 128 * 1024 * 1024)
+    old = download('https://github.com/sergkreis/sphol-log-collector/releases/download/v0.3.0/' + ASSET, 128 * 1024 * 1024)
     assert hashlib.sha256(old).hexdigest() == OLD_SHA
     with tempfile.TemporaryDirectory(prefix='sphol-cross-version-') as temp:
         root = Path(temp)
@@ -54,11 +55,13 @@ def main():
         for name, scope in (('credentials.dpapi', 'combat:write'), ('credentials-v2.dpapi', 'gamelogs:write')):
             CredentialStore(state / name).save({**credentials, 'scope': scope})
             assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
+            assert credentials['access_token'].encode() not in (state / name).read_bytes()
         expanded = ExpandedQueue(state)
         expanded.put('expanded-sentinel', {'schema': 2, 'category': 'notify',
                      'text': 'Цель неуязвима.', 'listener': 'Synthetic Pilot',
                      'time': '2030-01-01T00:00:00+00:00', 'type': 'game-event'})
         expanded.close()
+        seeded = {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()}
         stage = root / 'update-pinned'; stage.mkdir()
         target = root / ASSET
         target.write_bytes(old)
@@ -73,6 +76,8 @@ def main():
         try:
             wait_for(lambda: windows(target))
             before = {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()}
+            for name, data in seeded.items():
+                assert before[name] == data, 'Old release changed seeded state: ' + name
             new_sha = hashlib.sha256(replacement).hexdigest()
             helper = subprocess.Popen([str(helper_path), '--apply-update', str(target), str(original.pid), OLD_SHA, new_sha], cwd=stage, env=env)
             wait_for(lambda: (stage / 'ready').exists())
@@ -88,7 +93,7 @@ def main():
             assert {'pending.sqlite3', 'pending-v2.sqlite3', 'credentials.dpapi', 'credentials-v2.dpapi'} <= before.keys()
             for name, scope in (('credentials.dpapi', 'combat:write'), ('credentials-v2.dpapi', 'gamelogs:write')):
                 assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
-            print('OK: published frozen v0.2.1 pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; window PIDs=' + ','.join(restarted) + '; all queue/credential bytes preserved; capture never started; fixture forces parent exit')
+            print('OK: published frozen v0.3.0 pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
         finally:
             for pid in windows(target):
                 subprocess.run(['taskkill', '/PID', pid, '/T', '/F'], check=False)

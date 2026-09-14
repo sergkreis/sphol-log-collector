@@ -18,12 +18,17 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - name: Native Tk synthetic capture and shutdown smoke
         run: python -m tools.native_gui_smoke
+      - name: Native single Start streams and identity isolation
+        run: python -m tools.native_single_smoke
       - run: python -m pip install --require-hashes --only-binary=":all:" -r requirements-build.txt
       - run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name SPHOLLogCollector run_collector.py
-      - name: Frozen EXE graphite Tk and default-off v2 smoke
+      - name: Frozen EXE single Start, consent, counters and isolation
+        env:
+          SPHOL_SMOKE_EVIDENCE: smoke-reports
         shell: pwsh
         run: |
-          $report = Join-Path $env:RUNNER_TEMP 'frozen-smoke.txt'
+          New-Item -ItemType Directory -Force smoke-reports | Out-Null
+          $report = Join-Path $pwd 'smoke-reports/frozen-smoke.txt'
           $process = Start-Process -FilePath dist/SPHOLLogCollector.exe -ArgumentList @('--synthetic-smoke-report', "`"$report`"") -PassThru
           if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Frozen smoke timed out' }
           if (Test-Path $report) { Get-Content $report }
@@ -35,8 +40,11 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
         run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
-      - name: Pinned released v0.2.1 to real new collector replacement and relaunch
-        run: python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe
+      - name: Pinned released v0.3.0 to real new collector replacement and DPAPI preservation
+        shell: pwsh
+        run: |
+          python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe 2>&1 | Tee-Object smoke-reports/cross-version.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Cross-version preservation failed' }
       - name: Generate version-bound update manifest
         run: python -m tools.make_update_manifest dist/SPHOLLogCollector.exe
       - shell: pwsh
@@ -59,3 +67,12 @@ jobs:
           overwrite: false
           include-hidden-files: false
       # Candidate artifact only: no GitHub Release, signing or attestation.
+      - name: Upload synthetic acceptance evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: SPHOL-smoke-evidence-${{ github.sha }}
+          path: smoke-reports/
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: false
