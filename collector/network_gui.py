@@ -157,6 +157,15 @@ class ConnectedApp(App):
             self.pair()
             return
         if getattr(self, 'expanded', None):
+            legacy = self.expanded.uploader
+            if legacy and self.expanded.queue.count():
+                current_ids = {c['id'] for c in self.uploader.credentials['characters']}
+                legacy_ids = {c['id'] for c in legacy.credentials['characters']}
+                if current_ids != legacy_ids:
+                    self.expanded.problem = True
+                    self.connection.config(text='Сохранена очередь наблюдений другого персонажа. Сбор не начат: старая привязка и очередь сохранены без отправки. Нужна безопасная миграция очереди.')
+                    self.refresh_controls()
+                    return
             # Drain legacy scoped queues under their original installation identity.
             # A lost ACK must not become a new server event under a different ID.
             if not self.expanded.uploader or not self.expanded.queue.count():

@@ -111,7 +111,10 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertEqual(window.clipboard_get(), 'TEST-1234')
                     app.pairing = None
                     app.uploader = SimpleNamespace(paused=False, failures=0, credentials={
-                        'characters': [{'name': 'Synthetic Smoke Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'})
+                        'scope': 'gamelogs:write', 'access_token': 'a'*43,
+                        'installation_id': 'b'*32, 'token_type': 'Bearer',
+                        'characters': [{'id': 42, 'name': 'Synthetic Smoke Pilot'}],
+                        'expires_at': '2099-01-01T00:00:00Z'})
                     app.show_identity()
                     app.refresh_controls()
                     window.update()

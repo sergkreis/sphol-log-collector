@@ -35,7 +35,7 @@ if SERVER:
                     page.locator('#code').fill(code); page.locator('#check').click()
                     page.locator('#confirmation').wait_for(state='visible')
                     self.assertTrue(page.locator('#approve').is_disabled())
-                    self.assertIn('gamelogs:write',page.locator('#consent-kind').inner_text())
+                    self.assertIn('три вида обезличенных наблюдений',page.locator('#consent-kind').inner_text())
                     page.screenshot(path='/tmp/sphol-expanded-preview/browser-consent.png',full_page=True)
                     page.locator('#consent').check()
                     with page.expect_response('**/approval') as approval:
