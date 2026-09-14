@@ -122,7 +122,7 @@ class PairingCallbacks(unittest.TestCase):
         app.queue.batch.return_value = []
         app.queue.count.return_value = 0
         app.uploader = types.SimpleNamespace(paused=False, credentials={
-            'characters': [{'name': 'Synthetic Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'})
+            'scope': 'gamelogs:write', 'characters': [{'name': 'Synthetic Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'})
         app.show_identity()
         app.identity.reset_mock()
         app.network_tick()

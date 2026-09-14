@@ -38,7 +38,7 @@ class ExpandedControls:
         buttons = ttk.Frame(frame)
         buttons.pack(anchor='w')
         self.approve_button = ttk.Button(buttons, text='Разрешить наблюдения', command=self.approve)
-        self.approve_button.pack(side='left')
+        self.approve_button.pack_forget()
         self.start_button = ttk.Button(buttons, text='Включить отправку сигналов…', command=self.start)
         # Main capture button controls both approved streams.
         self.stop_button = ttk.Button(buttons, text='Остановить v2', command=self.stop)
@@ -182,7 +182,7 @@ class ExpandedControls:
             self.approve_button.pack_forget()
             self.summary.config(text=f'Наблюдения за запуск: собрано {self.queue.inserted_count - self.baseline} (все персонажи) · принято {self.ack_count} · к отправке {counts["eligible"]}')
         else:
-            self.approve_button.pack(side='left')
+            self.approve_button.pack_forget()
             self.summary.config(text='Наблюдения не отправляются · нужно разрешение')
         from .dashboard import refresh
         refresh(self.app)

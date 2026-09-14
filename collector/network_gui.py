@@ -51,7 +51,7 @@ class ConnectedApp(App):
         buttons = ttk.Frame(self.network_area)
         buttons.pack(anchor='w', pady=(8, 0))
         self.pair_button = ttk.Button(buttons, text='Привязать персонажа…', command=self.pair)
-        self.pair_button.pack(side='left')
+        self.pair_button.pack_forget()
 
         self.unpair_button = ttk.Button(self.danger_area, text='Удалить привязку…', command=self.unpair)
         self.unpair_button.pack(side='left')
@@ -79,7 +79,7 @@ class ConnectedApp(App):
             if self.uploader:
                 self.pair_button.pack_forget()
             else:
-                self.pair_button.pack(side='left')
+                self.pair_button.pack_forget()
 
         self.unpair_button.config(state='disabled' if self.busy else 'normal')
         self.upload_state.config(text='Отправка включена — только для привязанного персонажа' if self.upload_enabled else 'Отправка выключена — данные остаются на компьютере')
@@ -135,18 +135,32 @@ class ConnectedApp(App):
         threading.Thread(target=run, daemon=True).start()
 
     def pair(self):
-        if self.busy or self.uploader or self.pairing:
+        if self.busy or self.pairing:
             return
-        if self.queue.count():
+        if self.queue.count() and not self.uploader:
             messagebox.showwarning('Есть очередь', 'Перед новой привязкой удалите очередь, чтобы исключить передачу данных другому аккаунту.')
             return
         if not messagebox.askyesno('Привязать персонажа?', 'Открыть sphol.com для подтверждения персонажа? После привязки «Начать сбор» автоматически отправляет его новые боевые события и сохранённую очередь на sphol.com. Остановка прекращает сбор и новые запросы. Пароль здесь не вводится.'):
             return
-        self.pairing = Pairing()
+        self.pairing = Pairing(scope='gamelogs:write', browser=True, credentials=self.uploader.credentials if self.uploader else None)
         self.connection.config(text='Получаем код привязки…')
         self.work('pair', self.pairing.start)
 
     def start(self):
+        if self.pairing and getattr(self.pairing, 'browser_uri', None):
+            webbrowser.open(self.pairing.browser_uri)
+            return
+        if self.busy or self.pairing:
+            return
+        if not self.uploader or self.uploader.credentials['scope'] != 'gamelogs:write':
+            self.resume_after_pair = True
+            self.pair()
+            return
+        if getattr(self, 'expanded', None):
+            # Drain legacy scoped queues under their original installation identity.
+            # A lost ACK must not become a new server event under a different ID.
+            if not self.expanded.uploader or not self.expanded.queue.count():
+                self.expanded.uploader = Uploader(self.uploader.credentials)
         self.upload_problem = False
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
@@ -215,12 +229,15 @@ class ConnectedApp(App):
                 self.clear_pairing_code()
                 self.connection.config(text='Запрос не выполнен. Очередь сохранена; успех не подтверждён. Проверьте сеть и срок привязки.')
             elif kind == 'pair':
-                self.pairing_code.set(result)
-                self.code_frame.pack(anchor='w', pady=8)
-                self.copy_button.config(state='normal')
-                self.copy_feedback.config(text='')
-                self.connection.config(text='Введите код на sphol.com и подтвердите привязку.')
-                webbrowser.open(PAIR_URI)
+                if getattr(self.pairing, 'browser', False):
+                    self.connection.config(text='Подтвердите сбор боевых событий и трёх безопасных наблюдений в браузере.')
+                    webbrowser.open(PAIR_URI + '#' + result)
+                else:  # Legacy protocol compatibility; new Start never selects this path.
+                    self.pairing_code.set(result)
+                    self.code_frame.pack(anchor='w', pady=8)
+                    self.copy_button.config(state='normal')
+                    self.copy_feedback.config(text='')
+                    webbrowser.open(PAIR_URI)
             elif kind == 'token' and result:
                 self.clear_pairing_code()
                 try:
@@ -231,6 +248,9 @@ class ConnectedApp(App):
                 except Exception:
                     self.connection.config(text='Не удалось безопасно сохранить привязку Windows. Отправка недоступна.')
                 self.pairing = None
+                if getattr(self, 'resume_after_pair', False) and self.uploader and self.uploader.credentials['scope'] == 'gamelogs:write':
+                    self.resume_after_pair = False
+                    self.start()
             elif kind == 'upload':
                 snapshot, status = result
                 self.queue.acknowledge(snapshot.accepted)

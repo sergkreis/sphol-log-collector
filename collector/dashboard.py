@@ -16,9 +16,9 @@ class Dashboard:
         row = ttk.Frame(parent)
         row.pack(fill='x', pady=(8, 8), before=app.capture_buttons)
         for i, (title, note) in enumerate([
-            ('Боевые · собрано', 'за запуск · все персонажи'),
-            ('Сервер принял', 'боевые · за запуск'),
-            ('К отправке', 'боевые · ваш персонаж'),
+            ('Собрано', 'за запуск · все персонажи'),
+            ('Сервер принял', 'все события · за запуск'),
+            ('К отправке', 'все события · ваш персонаж'),
         ]):
             row.columnconfigure(i, weight=1, uniform='metric')
             cell = ttk.Frame(row)
@@ -43,7 +43,14 @@ class Dashboard:
         collected = app.queue.inserted_count - self.baseline
         listeners = {c['name'] for c in app.uploader.credentials['characters']} if getattr(app, 'uploader', None) else set()
         counts = queue_counts(app.queue, listeners)
-        for label, value in zip(self.metrics, (collected, self.confirmed, counts['eligible'])):
+        expanded = getattr(app, 'expanded', None)
+        confirmed, eligible = self.confirmed, counts['eligible']
+        if expanded:
+            collected += expanded.queue.inserted_count - expanded.baseline
+            confirmed += expanded.ack_count
+            names = {c['name'] for c in expanded.uploader.credentials['characters']} if expanded.uploader else set()
+            eligible += queue_counts(expanded.queue, names)['eligible']
+        for label, value in zip(self.metrics, (collected, confirmed, eligible)):
             label.config(text=f'{value:,}'.replace(',', ' '))
         status = app.status.get()
         if 'ошибк' in status or 'проверьте' in status:

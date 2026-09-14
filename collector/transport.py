@@ -46,7 +46,7 @@ def decode(raw):
 
 class HTTPS:
     def post(self, path, payload, token=None):
-        if path not in ('/api/collector/v1/pairings', '/api/collector/v1/pairings/token', '/api/collector/v1/events'):
+        if path not in ('/api/collector/v1/pairings', '/api/collector/v1/pairings/token', '/api/collector/v1/pairings/browser', '/api/collector/v1/events'):
             raise ProtocolError('Disallowed endpoint')
         body = encode(payload)
         if len(body) > MAX_BODY:
@@ -114,9 +114,10 @@ def validate_credentials(data):
 
 
 class Pairing:
-    def __init__(self, http=None, scope='combat:write'):
+    def __init__(self, http=None, scope='combat:write', browser=False, credentials=None):
         if scope not in ('combat:write', 'gamelogs:write'):
             raise ProtocolError('Invalid requested scope')
+        self.browser, self.credentials = browser, credentials
         self.scope = scope
         self.http = http or HTTPS()
         self.verifier = secrets.token_urlsafe(32)
@@ -124,17 +125,18 @@ class Pairing:
 
     def start(self):
         challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode('ascii')).digest()).rstrip(b'=').decode()
-        status, data = self.http.post('/api/collector/v1/pairings', {
+        status, data = self.http.post('/api/collector/v1/pairings/browser' if self.browser else '/api/collector/v1/pairings', {
             'challenge': challenge, 'challenge_method': 'S256', 'client_version': '0.2.0',
             'device_label': 'SPHOL Windows collector',
-            **({'scope': self.scope} if self.scope != 'combat:write' else {})})
+            **({'scope': self.scope} if self.scope != 'combat:write' else {})}, **({'token': self.credentials['access_token']} if self.credentials else {}))
         keys = {'device_secret', 'user_code', 'verification_uri', 'expires_in', 'interval'}
         if status not in (200, 201) or not isinstance(data, dict) or set(data) != keys:
             raise ProtocolError('Invalid pairing response')
-        if not opaque(data['device_secret']) or data['verification_uri'] != PAIR_URI or not isinstance(data['user_code'], str) or not re.fullmatch('[A-Z0-9-]{4,32}', data['user_code']):
+        if not opaque(data['device_secret']) or data['verification_uri'] != PAIR_URI or not isinstance(data['user_code'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}' if self.browser else '[A-Z0-9-]{4,32}', data['user_code']):
             raise ProtocolError('Invalid pairing origin or code')
         if type(data['expires_in']) is not int or not 1 <= data['expires_in'] <= 300 or type(data['interval']) is not int or not 1 <= data['interval'] <= 30:
             raise ProtocolError('Invalid pairing timing')
+        self.browser_uri = PAIR_URI + '#' + data['user_code'] if self.browser else None
         self.secret, self.interval = data['device_secret'], data['interval']
         self.deadline = time.monotonic() + data['expires_in']
         self.next_poll = time.monotonic() + self.interval
@@ -147,7 +149,7 @@ class Pairing:
         if now < self.next_poll:
             return None
         self.next_poll = now + self.interval
-        status, data = self.http.post('/api/collector/v1/pairings/token', {'device_secret': self.secret, 'verifier': self.verifier})
+        status, data = self.http.post('/api/collector/v1/pairings/token', {'device_secret': self.secret, 'verifier': self.verifier, **({'migration_token': self.credentials['access_token']} if self.credentials else {})})
         if status == 400 and data in ({'error': 'authorization_pending'}, {'error': 'slow_down'}):
             if data['error'] == 'slow_down':
                 self.interval = min(60, self.interval + 5)
