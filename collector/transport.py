@@ -183,6 +183,10 @@ def build_batch(queue, credentials):
                 or not event['text'].isprintable() or not isinstance(event['listener'], str)
                 or not 1 <= len(event['listener']) <= 128 or not event['listener'].isprintable()):
             raise ProtocolError('Malformed pending event; delete pending to recover')
+        if v2:
+            from .signals import sanitize
+            if sanitize(event['category'], event['text']) != event['text']:
+                raise ProtocolError('Unsafe legacy expanded record retained locally; not uploaded')
         expiry(event['time'])  # Strict UTC format, without treating old events as credential expiry.
         candidate = {'schema': schema, 'events': events + [event]}
         if len(encode(candidate)) > MAX_BODY:

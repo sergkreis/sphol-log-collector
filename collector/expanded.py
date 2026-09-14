@@ -2,16 +2,17 @@
 from datetime import datetime, timezone
 import re
 from .core import MAX_LINE, PendingQueue, Tailer
+from .signals import sanitize
 
 SCOPE = 'gamelogs:write'
-CONSENT = ('Отправлять на sphol.com новые строки Gamelogs ВСЕХ типов (combat, notify, None и другие)? '
-           'Они могут содержать личные и чувствительные уведомления. Chatlogs и диагностика не читаются. '
-           'Исходный текст хранится приватно; корпорации доступны только разрешённые сервером сигналы. '
-           'Классификация и связь с боями выполняются сервером автоматически. '
+CONSENT = ('Отправлять на sphol.com только распознанные сигналы варпа флота, дальности модуля и неуязвимости цели? '
+           'Имена командиров, названия модулей, расстояния и маршруты не отправляются. '
+           'Неизвестные строки, личные уведомления, Chatlogs, ссылки и торговля не отправляются. '
+           'Боевые события продолжают передаваться отдельно по прежним правилам. '
            'Это отдельное согласие на отправку, НЕ локальная запись. История до включения не копируется. '
            'Нужно новое подтверждение области gamelogs:write в браузере; старая привязка и очереди сохранятся.')
 UNSUPPORTED = ('Расширенный режим сервером не подтверждён или пока не поддерживается. '
-               'Отправка всех Gamelogs выключена; старая привязка и обе очереди сохранены.')
+               'Отправка разрешённых сигналов выключена; старая привязка и обе очереди сохранены.')
 LINE = re.compile(r'^\s*\[\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})\s*\]\s*\(([A-Za-z0-9_-]{1,32})\) ?(.*)$')
 
 
@@ -25,7 +26,9 @@ def parse_game_line(raw, listener=''):
         when = datetime.strptime(match[1], '%Y.%m.%d %H:%M:%S').replace(tzinfo=timezone.utc)
     except (UnicodeError, ValueError):
         return None
-    text = match[3]
+    text = sanitize(match[2], match[3])
+    if text is None:
+        return None
     if not text.strip() or any(ord(c) < 32 or ord(c) == 127 or 0xD800 <= ord(c) <= 0xDFFF for c in text):
         return None
     return {'schema': 2, 'time': when.isoformat(), 'type': 'game-event',

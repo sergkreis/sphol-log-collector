@@ -36,18 +36,18 @@ if SERVER:
                 with source.open('a',encoding='utf-8') as f:
                     for category,text in [('notify','Переход в варп-режим по приказу Synthetic Commander'),('None','Synthetic Scoop I* отключается, теряя руду в пространстве, так как вы отдалились на 1600,00 м от цели, что превышает радиус действия в 1500,00 м.'),('info','<b>Synthetic private notification</b>'),('combat','Synthetic combat')]:
                         f.write(datetime.now(timezone.utc).strftime('[ %Y.%m.%d %H:%M:%S ] ') + f'({category}) {text}\n')
-                self.assertEqual(tailer.poll(),4)
+                self.assertEqual(tailer.poll(),2)
                 payload = self.t.build_batch(pending,credentials)
                 self.assertEqual(self.request('events',payload,token=legacy['access_token'])[0],403)
                 uploader = self.t.Uploader(credentials)
                 with patch.object(collector_api,'MAX_EVENTS',0):
                     self.assert_retry_scheduled(uploader,pending)
-                self.assertEqual(pending.count(),4)
+                self.assertEqual(pending.count(),2)
                 uploader.next_try=0
                 uploader.upload(pending)
                 self.assertEqual(pending.count(),0)
                 with self.api.transaction() as con:
-                    self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],4)
+                    self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],2)
                     self.assertEqual(con.execute('SELECT count(*) FROM collector_events').fetchone()[0],0)
                 # Stored killmail anchors, real member HTTP, fixed private-safe projection.
                 import collector_sorties, server, http.client, json
@@ -65,7 +65,7 @@ if SERVER:
                 self.assertTrue(all(e['sortieKey'] for e in activity['episodes']))
                 for secret in ('Synthetic Commander','Synthetic Scoop','Synthetic private notification','Synthetic combat'):
                     self.assertNotIn(secret,raw)
-                self.assertIn('Synthetic private notification',json.dumps(self.api.private_events(42)))
+                self.assertNotIn('Synthetic',json.dumps(self.api.private_events(42)))
                 self.assertEqual(self.api.private_events(999),[])
                 if os.environ.get('SPHOL_BROWSER_GATE') == '1':
                     import re
@@ -99,6 +99,42 @@ if SERVER:
                     self.assertEqual(old_tailer.poll(),1)
                     self.t.Uploader(legacy).upload(old_queue)
                     self.assertEqual(old_queue.count(),0)
+                # Client -> HTTP -> SQLite -> specific loss facts, without raw notify.
+                from fixtures import victim
+                loss = killmail(victim_data=victim(character_id=42, corporation_id=123),
+                                attackers=[attacker(character_id=43)])
+                loss.update(killmail_id=99003, killmail_time=collector_api.utc(__import__('time').time()+1))
+                self.store.upsert_rows(123, [loss])
+                self.store.remember_names({42:'Test Pilot', 43:'Synthetic Enemy'})
+                with closing(self.core.PendingQueue(root/'facts.sqlite')) as facts_queue:
+                    facts_tailer = self.core.Tailer(logs,facts_queue,started=datetime.now(timezone.utc)-timedelta(seconds=2))
+                    with source.open('a',encoding='utf-8') as f:
+                        for text in ('125 из Synthetic Enemy',
+                                     '240 единиц запаса прочности щитов получено накачкой от Synthetic Support',
+                                     'Попытка варп-глушения: источник Synthetic Enemy, цель Test Pilot!'):
+                            f.write(datetime.now(timezone.utc).strftime('[ %Y.%m.%d %H:%M:%S ] (combat) ')+text+'\n')
+                    self.assertEqual(facts_tailer.poll(),3)
+                    self.t.Uploader(legacy).upload(facts_queue)
+                    self.assertEqual(facts_queue.count(),0)
+                con = http.client.HTTPConnection('127.0.0.1', self.httpd.server_port, timeout=5)
+                con.request('GET','/api/killmail-logs?id=99003',headers={'Cookie':server.SSO_COOKIE+'=synthetic-only'})
+                response=con.getresponse(); facts_raw=response.read().decode(); con.close()
+                self.assertEqual(response.status,200)
+                self.assertEqual([(f['kind'],f['amount']) for f in json.loads(facts_raw)['facts']],
+                                 [('damage',125),('repair',240),('tackle_attempt',None)])
+                self.assertNotIn('Synthetic Commander',facts_raw)
+                # Bypass-client adversary: reject raw/destinations before persistence.
+                for text in ('Переход в варп-режим по приказу Synthetic Commander',
+                             'Warping to Private System', 'https://private.invalid',
+                             '<b>private</b>', 'Contract accepted', 'Самоуничтожение через 120 секунд.'):
+                    bad = dict(payload['events'][0],id='f'*64,text=text)
+                    ack = self.request('events',{'schema':2,'events':[bad]},token=credentials['access_token'])[1]
+                    self.assertEqual(ack['accepted_ids'],[])
+                with self.api.transaction() as db:
+                    saved = ' '.join(r[0] for r in db.execute('SELECT payload FROM collector_private_events'))
+                    self.assertNotIn('Synthetic Commander',saved)
+                    self.assertNotIn('private',saved)
+                    self.assertEqual(db.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],2)
                 # Exact stable retry is acknowledged, not duplicated.
                 self.assertEqual(self.request('events',payload,token=credentials['access_token'])[1]['accepted_ids'],[e['id'] for e in payload['events']])
 else:

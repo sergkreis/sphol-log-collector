@@ -20,10 +20,7 @@ class ExpandedTests(unittest.TestCase):
         for category in ('combat', 'notify', 'None', 'info', 'warning', 'question', 'custom_1'):
             raw = f' [ 2030.01.01 00:00:01 ] ({category}) <b>Личное уведомление</b>  \r\n'.encode()
             e = parse_game_line(raw, 'Synthetic Pilot')
-            self.assertEqual(e['category'], category)
-            self.assertEqual(e['text'], '<b>Личное уведомление</b>  ')
-            self.assertEqual(e['type'], 'game-event')
-            self.assertEqual(e['schema'], 2)
+            self.assertIsNone(e)
         for raw in (b'[ 2030.01.01 00:00:01 ] (notify) x\x00y\n', b'bad\xff\n', b'x'*8193,
                     b'[ 2030.01.01 00:00:01 ] (bad category) x\n'):
             self.assertIsNone(parse_game_line(raw))
@@ -51,9 +48,9 @@ class ExpandedTests(unittest.TestCase):
                 self.assertEqual(tailer.unattributed_files, 0)
                 with p.open('ab') as f:
                     for category in ('notify','None','combat','info'):
-                        f.write(f'[ 2030.01.01 00:00:02 ] ({category}) NEW\n'.encode())
-                self.assertEqual(tailer.poll(),4)
-                self.assertEqual({e['category'] for e in q.batch()}, {'notify','None','combat','info'})
+                        f.write(f'[ 2030.01.01 00:00:02 ] ({category}) Fleet warp initiated.\n'.encode())
+                self.assertEqual(tailer.poll(),2)
+                self.assertEqual({e['category'] for e in q.batch()}, {'notify','None'})
                 self.assertEqual(legacy.batch(), saved)
                 self.assertNotIn('PRIVATE', str(q.batch()))
                 ids = [e['id'] for e in q.batch()]
@@ -62,7 +59,7 @@ class ExpandedTests(unittest.TestCase):
 
     def test_bounded_versioned_queue_and_mixed_envelope(self):
         with tempfile.TemporaryDirectory() as tmp, closing(ExpandedQueue(Path(tmp), max_events=1)) as q:
-            e = parse_game_line(b'[ 2030.01.01 00:00:01 ] (None) Synthetic\n', 'Synthetic Pilot')
+            e = parse_game_line(b'[ 2030.01.01 00:00:01 ] (None) Fleet warp initiated.\n', 'Synthetic Pilot')
             q.put('b'*64,e)
             q.put('b'*64,e)
             with self.assertRaises(QueueFull):

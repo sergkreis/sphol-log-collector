@@ -17,10 +17,10 @@ class ExpandedControls:
         self.uploader = self.pairing = self.tailer = None
         self.busy = self.enabled = self.closed = False
         self.results = queue.Queue()
-        frame = ttk.LabelFrame(app.network_area, text='Отдельный режим v2: все Gamelogs', padding=8)
+        frame = ttk.LabelFrame(app.network_area, text='Отдельный режим v2: разрешённые сигналы', padding=8)
         # Server support is unavailable. Preserve separate consent/state internals,
         # but do not mount technical controls or imply a usable public feature.
-        ttk.Label(frame, text='Все типы, включая личные уведомления. Без Chatlogs и диагностики. Локальная запись выше по-прежнему НЕ отправляется.', wraplength=620).pack(anchor='w')
+        ttk.Label(frame, text='Только распознанные сигналы без личных уведомлений и маршрутов. Локальная запись НЕ отправляется.', wraplength=620).pack(anchor='w')
         self.status = ttk.Label(frame, text='Отправка v2 выключена. Нужно отдельное согласие и подтверждение в браузере.', wraplength=620)
         self.status.pack(anchor='w')
         self.pending = ttk.Label(frame)
@@ -34,7 +34,7 @@ class ExpandedControls:
         buttons.pack(anchor='w')
         self.approve_button = ttk.Button(buttons, text='Подтвердить v2 в браузере…', command=self.approve)
         self.approve_button.pack(side='left')
-        self.start_button = ttk.Button(buttons, text='Включить отправку всех Gamelogs…', command=self.start)
+        self.start_button = ttk.Button(buttons, text='Включить отправку сигналов…', command=self.start)
         self.start_button.pack(side='left')
         self.stop_button = ttk.Button(buttons, text='Остановить v2', command=self.stop)
         self.stop_button.pack(side='left')
@@ -71,7 +71,7 @@ class ExpandedControls:
         if not self.uploader or self.uploader.paused:
             self.status.config(text=UNSUPPORTED)
             return
-        if not messagebox.askyesno('Отправка всех Gamelogs', CONSENT):
+        if not messagebox.askyesno('Отправка разрешённых сигналов', CONSENT):
             return
         try:
             self.tailer = capture(self.app.log_root, self.queue, consent=True, credentials=self.uploader.credentials)
