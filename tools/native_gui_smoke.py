@@ -45,7 +45,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertFalse(app.expanded.start_button.winfo_viewable())
                     self.assertFalse(app.settings.winfo_viewable())
                     self.assertTrue(app.main_button.winfo_viewable())
-                    self.assertEqual(app.expanded.approve_button.cget('text'), 'Подтвердить v2 в браузере…')
+                    self.assertEqual(app.expanded.approve_button.cget('text'), 'Разрешить наблюдения')
                     with patch('collector.expanded_gui.messagebox.askyesno', return_value=False), patch.object(app.expanded, 'work') as work:
                         app.expanded.approve_button.invoke()
                         work.assert_not_called()
@@ -110,7 +110,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertTrue(app.copy_button.instate(['disabled']))
                     self.assertEqual(window.clipboard_get(), 'TEST-1234')
                     app.pairing = None
-                    app.uploader = SimpleNamespace(paused=False, credentials={
+                    app.uploader = SimpleNamespace(paused=False, failures=0, credentials={
                         'characters': [{'name': 'Synthetic Smoke Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'})
                     app.show_identity()
                     app.refresh_controls()
@@ -134,7 +134,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     app.results.put(('upload', (snapshot, 'Сервер подтвердил сохранение: 1 событий.'), None))
                     app.network_tick()
                     confirmed = app.last_ack.cget('text')
-                    self.assertIn('Сервер подтвердил события', confirmed)
+                    self.assertIn('Боевые: последнее подтверждение', confirmed)
                     self.assertEqual(app.dashboard.confirmed, 1)
                     app.network_tick()
                     self.assertEqual(app.last_ack.cget('text'), confirmed)
