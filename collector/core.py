@@ -71,6 +71,7 @@ class PendingQueue:
         self.db.execute('CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, payload TEXT NOT NULL, size INTEGER NOT NULL)')
         self.db.commit()
         self.max_events, self.max_bytes = max_events, max_bytes
+        self.inserted_count = 0  # Process-local, successful new commits only.
 
     def put(self, event_id: str, event: dict):
         payload = json.dumps(event, ensure_ascii=False, separators=(',', ':'))
@@ -83,6 +84,7 @@ class PendingQueue:
             if count >= self.max_events or used + size > self.max_bytes:
                 raise QueueFull('Queue full; collection paused. Nothing uploaded.')
             self.db.execute('INSERT INTO pending VALUES (?,?,?)', (event_id, payload, size))
+        self.inserted_count += 1
 
     def batch(self, limit=100, listeners=None):
         result = []

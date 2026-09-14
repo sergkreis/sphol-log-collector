@@ -6,7 +6,7 @@ import webbrowser
 from tkinter import ttk, messagebox
 from .gui import App, tk
 from .credentials import CredentialStore
-from .transport import Pairing, Uploader, PAIR_URI
+from .transport import Pairing, Uploader, PAIR_URI, ORIGIN
 
 
 class Snapshot:
@@ -26,16 +26,18 @@ class ConnectedApp(App):
         self.busy = False
         self.pairing = self.uploader = None
         self.upload_enabled = False
+        self.upload_problem = False
         self.store = CredentialStore(queue.path.parent / 'credentials.dpapi')
         super().__init__(window, log_root, queue)
-        self.identity = ttk.Label(self.identity_area, text='Персонаж не привязан', font=('Segoe UI', 14, 'bold'), wraplength=620)
+        self.identity = ttk.Label(self.identity_area, text='Персонаж не привязан', style='Title.TLabel', wraplength=620)
         self.identity.pack(anchor='w')
-        ttk.Label(self.identity_area, text='Сохранённая привязка не означает текущую связь с сервером.', wraplength=620).pack(anchor='w', pady=(4, 0))
+        self.binding_state = ttk.Label(self.identity_area, text='Привязка ещё не настроена', style='Muted.TLabel')
+        self.binding_state.pack(anchor='w', pady=(4, 0))
         self.upload_state = ttk.Label(self.network_area, font=('Segoe UI', 10, 'bold'), wraplength=620)
         self.upload_state.pack(anchor='w')
         self.last_ack = ttk.Label(self.network_area, text='Подтверждение сервера: в этом запуске ещё не получено.', wraplength=620)
         self.last_ack.pack(anchor='w', pady=(6, 0))
-        self.connection = ttk.Label(self.network_area, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий на sphol.com.', wraplength=620)
+        self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий на sphol.com.', wraplength=620)
         self.connection.pack(anchor='w', pady=(6, 8))
         self.code_frame = code_frame = ttk.Frame(self.network_area)
         ttk.Label(code_frame, text='Код привязки:').pack(side='left', padx=(0, 8))
@@ -66,12 +68,27 @@ class ConnectedApp(App):
         self.expanded = ExpandedControls(self)
         from .update_gui import UpdateControls
         self.updates = UpdateControls(self)
+        self.open_site = ttk.Button(self.footer, text='Открыть SPHOL', command=lambda: webbrowser.open(ORIGIN))
+        self.open_site.pack(side='right')
 
     def refresh_controls(self):
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
+        if hasattr(self, 'dashboard'):
+            if self.uploader:
+                self.pair_button.pack_forget()
+            else:
+                self.pair_button.pack(side='left')
 
         self.unpair_button.config(state='disabled' if self.busy else 'normal')
         self.upload_state.config(text='Отправка включена — только для привязанного персонажа' if self.upload_enabled else 'Отправка выключена — данные остаются на компьютере')
+        if self.upload_enabled and getattr(self.uploader, 'failures', 0):
+            self.upload_state.config(text='Сеть недоступна · очередь сохранена, повтор автоматически')
+        elif getattr(self, 'upload_problem', False):
+            self.upload_state.config(text='Ошибка отправки · очередь сохранена, см. диагностику')
+        elif self.uploader and self.uploader.paused:
+            self.upload_state.config(text='Отправка приостановлена · очередь сохранена, см. диагностику')
+        elif self.uploader and not self.upload_enabled:
+            self.upload_state.config(text='Отправка выключена. «Начать сбор» отправляет боевые события на sphol.com')
         self.capture_controls()
 
     def clear_pairing_code(self):
@@ -98,7 +115,9 @@ class ConnectedApp(App):
 
     def show_identity(self):
         c = self.uploader.credentials
-        self.identity.config(text='Персонаж: ' + ', '.join(x['name'] for x in c['characters']))
+        self.identity.config(text=', '.join(x['name'] for x in c['characters']))
+        if hasattr(self, 'binding_state'):
+            self.binding_state.config(text='Привязка сохранена · отдельно от сбора и связи')
         self.connection.config(text='Привязка действует до ' + c['expires_at'] + '. «Начать сбор» включает отправку; остановка сохраняет очередь.')
 
     def work(self, kind, function):
@@ -126,6 +145,7 @@ class ConnectedApp(App):
         self.work('pair', self.pairing.start)
 
     def start(self):
+        self.upload_problem = False
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
         self.refresh_controls()
@@ -164,6 +184,8 @@ class ConnectedApp(App):
         self.uploader = self.pairing = None
         self.clear_pairing_code()
         self.identity.config(text='Персонаж не привязан')
+        if hasattr(self, 'binding_state'):
+            self.binding_state.config(text='Привязка ещё не настроена')
         self.last_ack.config(text='Подтверждение сервера: в этом запуске ещё не получено.')
         self.connection.config(text='Локальная привязка удалена. Отзыв доступа на сайте выполняется отдельно.')
         self.refresh_controls()
@@ -176,6 +198,7 @@ class ConnectedApp(App):
         else:
             self.busy = False
             if error:
+                self.upload_problem = True
                 self.upload_enabled = False
                 self.pairing = None
                 self.clear_pairing_code()
@@ -200,7 +223,10 @@ class ConnectedApp(App):
             elif kind == 'upload':
                 snapshot, status = result
                 self.queue.acknowledge(snapshot.accepted)
+                if hasattr(self, 'dashboard'):
+                    self.dashboard.acknowledge(snapshot.accepted)
                 if snapshot.accepted:
+                    self.upload_problem = False
                     self.last_ack.config(text=f'Сервер подтвердил: {len(snapshot.accepted)} событий · {time.strftime("%d.%m.%Y %H:%M:%S")} (время компьютера)')
                 if self.uploader and self.uploader.paused:
                     self.upload_enabled = False

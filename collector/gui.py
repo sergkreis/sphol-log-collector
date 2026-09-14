@@ -31,8 +31,8 @@ class App:
         from .theme import apply_theme
         apply_theme(window)
         window.title('SPHOL — боевые журналы')
-        window.minsize(700, 540)
-        window.geometry('720x600')
+        window.minsize(760, 660)
+        window.geometry('780x700')
         self.status = tk.StringVar(value='Сбор выключен — новые события не читаются.')
         self.pending = tk.StringVar()
         self.frame = frame = ttk.Frame(window, padding=20)
@@ -43,11 +43,13 @@ class App:
         ttk.Label(self.header, text='БОЕВЫЕ ЖУРНАЛЫ', style='Muted.TLabel').pack(side='left', padx=16)
         self.identity_area = ttk.Frame(frame)
         self.identity_area.pack(fill='x', pady=(12, 16))
-        capture = ttk.LabelFrame(frame, text='Локальный сбор', padding=12)
+        capture = ttk.Frame(frame)
         capture.pack(fill='x')
+        self.capture_area = capture
         ttk.Label(capture, textvariable=self.status, wraplength=620).pack(anchor='w')
-        ttk.Label(capture, textvariable=self.pending).pack(anchor='w', pady=(6, 0))
+        # Detailed queue breakdown lives in the collapsed diagnostics.
         buttons = ttk.Frame(capture)
+        self.capture_buttons = buttons
         buttons.pack(anchor='w', pady=(12, 0))
         self.start_button = ttk.Button(buttons, text='Начать сбор', command=self.start)
         self.start_button.pack(side='left')
@@ -77,6 +79,13 @@ class App:
         ttk.Label(frame, text='Папка боевых журналов:', font=('Segoe UI', 9, 'bold')).pack(anchor='w')
         ttk.Label(frame, text=str(log_root), wraplength=620).pack(anchor='w', pady=(4, 8))
         ttk.Label(frame, text='Только новые боевые строки. Без чатов, памяти игры, паролей и фоновой службы. Отправка — только по вашему разрешению.', wraplength=620).pack(anchor='w')
+        from .dashboard import Dashboard
+        self.dashboard = Dashboard(self, self.capture_area)
+        self.dashboard.heading.pack(before=self.capture_area.winfo_children()[0], anchor='w', pady=(0, 8))
+        ttk.Label(self.network_area, text='Только боевые события · без чатов и маршрутов', style='Muted.TLabel').pack(anchor='w', pady=(0, 10))
+        self.footer = ttk.Frame(self.frame)
+        self.footer.pack(side='bottom', fill='x', pady=(16, 0))
+        ttk.Separator(self.footer).pack(fill='x', pady=(0, 12))
         window.protocol('WM_DELETE_WINDOW', self.close)
         self.tick()
 
@@ -88,7 +97,7 @@ class App:
         else:
             self.settings.pack_forget()
         self.window.update_idletasks()
-        self.window.geometry(f'720x{max(600, self.frame.winfo_reqheight())}')
+        self.window.geometry(f'780x{max(700, self.frame.winfo_reqheight())}')
 
     def toggle_capture(self):
         if self.stop_button.instate(['!disabled']):
@@ -134,6 +143,10 @@ class App:
         self.stop_button.config(state='normal' if self.tailer or getattr(self, 'local_capture', None) or getattr(self, 'upload_enabled', False) or (expanded and (expanded.enabled or expanded.tailer)) else 'disabled')
         if hasattr(self, 'main_button'):
             self.main_button.config(text='Остановить сбор и отправку' if self.stop_button.instate(['!disabled']) else 'Начать сбор')
+        from .dashboard import refresh
+        refresh(self)
+        if hasattr(self, 'updates'):
+            self.updates.refresh_button()
 
     def start(self):
         if self.tailer is not None:
@@ -181,6 +194,8 @@ class App:
             uploader = getattr(self, 'uploader', None)
             listeners = {c['name'] for c in uploader.credentials['characters']} if uploader else set()
             self.pending.set(queue_summary(self.queue, listeners))
+        from .dashboard import refresh
+        refresh(self)
         self.window.after(1000, self.tick)
 
     def close(self):

@@ -18,14 +18,18 @@ class UpdateControls:
     def __init__(self, app):
         self.app, self.busy = app, False
         self.results = queue.Queue()
-        self.label = ttk.Label(app.frame, text=f'Версия {VERSION} · обновления только вручную', wraplength=660, style='Muted.TLabel')
-        self.label.pack(anchor='w', pady=(12, 0), before=app.settings_button)
-        self.button = ttk.Button(app.header, text='Обновить программу', command=self.check)
-        self.button.pack(side='right')
+        self.label = ttk.Label(app.footer, text=f'Версия {VERSION} · обновления только вручную', wraplength=660, style='Muted.TLabel')
+        self.label.pack(anchor='w', pady=(0, 10))
+        self.button = ttk.Button(app.footer, text='Проверить обновление', command=self.check)
+        self.button.pack(side='left')
         if os.name != 'nt' or not getattr(sys, 'frozen', False):
             self.button.config(state='disabled')
             self.label.config(text=f'Версия {VERSION} · обновление доступно в Windows EXE')
         app.window.after(200, self.poll)
+
+    def refresh_button(self):
+        available = os.name == 'nt' and getattr(sys, 'frozen', False)
+        self.button.config(state='normal' if available and not self.busy and not active(self.app) else 'disabled')
 
     def check(self):
         if self.busy:
@@ -71,6 +75,7 @@ class UpdateControls:
                             self.app.window.after(100, self.wait_helper)
                         except Exception:
                             self.label.config(text='Не удалось запустить помощник. Программа не изменена.')
+        self.refresh_button()
         self.app.window.after(200, self.poll)
 
     def wait_helper(self):
