@@ -30,7 +30,12 @@ class SafeSignalsTests(unittest.TestCase):
         with TemporaryDirectory() as tmp, closing(ExpandedQueue(Path(tmp))) as queue:
             event={'schema':2,'time':'2030-01-01T00:00:01Z','type':'game-event',
                    'category':'notify','listener':creds()['characters'][0]['name'],'text':'private raw'}
-            queue.put('a'*64,event)
+            with self.assertRaises(ValueError):
+                queue.put('a'*64,event)
+            self.assertEqual(queue.count(),0)
+            # Simulate already-persisted unsafe data from the old implementation.
+            from collector.core import PendingQueue
+            PendingQueue.put(queue,'a'*64,event)
             before=queue.batch()
             with self.assertRaises(ProtocolError):
                 build_batch(queue,creds())

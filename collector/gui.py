@@ -67,11 +67,11 @@ class App:
         self.danger_area.pack(fill='x', pady=12)
         ttk.Button(self.danger_area, text='Удалить очередь…', command=self.clear).pack(side='left', padx=(0, 8))
         capture = self.settings
-        ttk.Label(capture, text='Расширенный журнал — пока недоступен на сервере', style='Muted.TLabel').pack(anchor='w', pady=8)
+        ttk.Label(capture, text='Полная локальная запись · никогда не отправляется', style='Muted.TLabel').pack(anchor='w', pady=8)
         self.local_enabled = tk.BooleanVar(value=False)
         self.local_toggle = ttk.Checkbutton(capture, text='Сохранять все игровые события локально', variable=self.local_enabled, command=self.toggle_local)
         self.local_toggle.pack(anchor='w', pady=(12, 0))
-        ttk.Label(capture, text='Только новые строки Gamelogs всех типов, НЕ Chatlogs. Возможны чувствительные игровые уведомления. Расширенные записи никогда не отправляются. Лимит: 64 МиБ на сессию / 128 МиБ всего; при заполнении запись остановится.', wraplength=620).pack(anchor='w')
+        ttk.Label(capture, text='Только новые строки Gamelogs всех типов, НЕ Chatlogs. Возможны чувствительные игровые уведомления. Полные локальные записи никогда не отправляются. Лимит: 64 МиБ на сессию / 128 МиБ всего; при заполнении запись остановится.', wraplength=620).pack(anchor='w')
         self.local_status = tk.StringVar(value='Полная локальная запись выключена. История уже остаётся в исходных Gamelogs.')
         ttk.Label(capture, textvariable=self.local_status, wraplength=620).pack(anchor='w')
         frame = self.settings
@@ -82,7 +82,7 @@ class App:
         from .dashboard import Dashboard
         self.dashboard = Dashboard(self, self.capture_area)
         self.dashboard.heading.pack(before=self.capture_area.winfo_children()[0], anchor='w', pady=(0, 8))
-        ttk.Label(self.network_area, text='Только боевые события · без чатов и маршрутов', style='Muted.TLabel').pack(anchor='w', pady=(0, 10))
+        ttk.Label(self.network_area, text='Боевые события + отдельно разрешённые наблюдения · без чатов и маршрутов', style='Muted.TLabel').pack(anchor='w', pady=(0, 10))
         self.footer = ttk.Frame(self.frame)
         self.footer.pack(side='bottom', fill='x', pady=(16, 0))
         ttk.Separator(self.footer).pack(fill='x', pady=(0, 12))

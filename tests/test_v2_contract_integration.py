@@ -22,7 +22,28 @@ if SERVER:
             pairing = self.t.Pairing(scope=SCOPE)
             code = pairing.start()
             self.assertEqual(self.request('approval', {'user_code':code,'consent':True})[0],403)
-            self.assertEqual(self.request('approval', {'user_code':code,'consent':True,'scope':SCOPE})[0],200)
+            if os.environ.get('SPHOL_BROWSER_GATE') == '1':
+                from playwright.sync_api import sync_playwright
+                import server
+                origin = f'http://127.0.0.1:{self.httpd.server_port}'
+                with patch.object(server, 'ALLOWED_ORIGINS', {origin}), sync_playwright() as pw:
+                    browser = pw.chromium.launch(headless=True)
+                    context = browser.new_context()
+                    context.route('**/*', lambda route: route.continue_() if route.request.url.startswith(origin+'/') else route.abort())
+                    context.add_cookies([{'name':server.SSO_COOKIE,'value':'synthetic-only','url':origin}])
+                    page = context.new_page(); page.goto(origin+'/collector/pair')
+                    page.locator('#code').fill(code); page.locator('#check').click()
+                    page.locator('#confirmation').wait_for(state='visible')
+                    self.assertTrue(page.locator('#approve').is_disabled())
+                    self.assertIn('gamelogs:write',page.locator('#consent-kind').inner_text())
+                    page.screenshot(path='/tmp/sphol-expanded-preview/browser-consent.png',full_page=True)
+                    page.locator('#consent').check()
+                    with page.expect_response('**/approval') as approval:
+                        page.locator('#approve').click()
+                    self.assertEqual(approval.value.status,200)
+                    browser.close()
+            else:
+                self.assertEqual(self.request('approval', {'user_code':code,'consent':True,'scope':SCOPE})[0],200)
             pairing.next_poll = 0
             credentials = pairing.poll()
             self.assertEqual(credentials['scope'], SCOPE)
@@ -34,20 +55,20 @@ if SERVER:
             with closing(ExpandedQueue(root)) as pending:
                 tailer = capture(logs,pending,consent=True,credentials=credentials,started=datetime.now(timezone.utc)-timedelta(seconds=2))
                 with source.open('a',encoding='utf-8') as f:
-                    for category,text in [('notify','Переход в варп-режим по приказу Synthetic Commander'),('None','Synthetic Scoop I* отключается, теряя руду в пространстве, так как вы отдалились на 1600,00 м от цели, что превышает радиус действия в 1500,00 м.'),('info','<b>Synthetic private notification</b>'),('combat','Synthetic combat')]:
+                    for category,text in [('notify','Переход в варп-режим по приказу Synthetic Commander'),('None','Synthetic Scoop I* отключается, теряя руду в пространстве, так как вы отдалились на 1600,00 м от цели, что превышает радиус действия в 1500,00 м.'),('notify','Цель неуязвима.'),('info','<b>Synthetic private notification</b>'),('combat','Synthetic combat')]:
                         f.write(datetime.now(timezone.utc).strftime('[ %Y.%m.%d %H:%M:%S ] ') + f'({category}) {text}\n')
-                self.assertEqual(tailer.poll(),2)
+                self.assertEqual(tailer.poll(),3)
                 payload = self.t.build_batch(pending,credentials)
                 self.assertEqual(self.request('events',payload,token=legacy['access_token'])[0],403)
                 uploader = self.t.Uploader(credentials)
                 with patch.object(collector_api,'MAX_EVENTS',0):
                     self.assert_retry_scheduled(uploader,pending)
-                self.assertEqual(pending.count(),2)
+                self.assertEqual(pending.count(),3)
                 uploader.next_try=0
                 uploader.upload(pending)
                 self.assertEqual(pending.count(),0)
                 with self.api.transaction() as con:
-                    self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],2)
+                    self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],3)
                     self.assertEqual(con.execute('SELECT count(*) FROM collector_events').fetchone()[0],0)
                 # Stored killmail anchors, real member HTTP, fixed private-safe projection.
                 import collector_sorties, server, http.client, json
@@ -55,13 +76,15 @@ if SERVER:
                 row = killmail(attackers=[attacker(character_id=p, corporation_id=123) for p in (42,43,44)])
                 row.update(killmail_id=99001, killmail_time=payload['events'][0]['time'])
                 self.store.upsert_rows(123, [row, dict(row,killmail_id=99002)])
+                grouping = server.group_battles(123,self.store.rows(123),{})
+                battle = server.with_sortie_comments({'corporation':{'id':123,'battles':grouping}})['corporation']['battles']['battles'][0]
                 con = http.client.HTTPConnection('127.0.0.1', self.httpd.server_port, timeout=5)
                 con.request('GET', '/api/activity-records', headers={'Cookie':server.SSO_COOKIE+'=synthetic-only'})
                 response = con.getresponse(); raw = response.read().decode(); con.close()
                 self.assertEqual(response.status,200)
                 activity = json.loads(raw)
                 events = [e for episode in activity['episodes'] for e in episode['events']]
-                self.assertEqual({e['signal'] for e in events}, {'fleet_warp','module_range'})
+                self.assertEqual({e['signal'] for e in events}, {'fleet_warp','module_range','target_invulnerable'})
                 self.assertTrue(all(e['sortieKey'] for e in activity['episodes']))
                 for secret in ('Synthetic Commander','Synthetic Scoop','Synthetic private notification','Synthetic combat'):
                     self.assertNotIn(secret,raw)
@@ -89,6 +112,14 @@ if SERVER:
                             self.assertIn('Цель вне радиуса действия модуля.',rendered)
                             self.assertNotIn('Synthetic private notification',rendered)
                             self.assertTrue(page.locator('#activityRecords').evaluate('(e)=>e.scrollWidth<=e.clientWidth'))
+                            page.screenshot(path=f'/tmp/sphol-expanded-preview/browser-observations-{width}.png',full_page=True)
+                            page.evaluate('(battle)=>openBattleModal(battle)',battle)
+                            page.locator('#battleModal[open] #battleLogs details summary').first.click()
+                            modal = page.locator('#battleModal #battleLogs')
+                            for text in ('Выполняется варп флота.','Цель вне радиуса действия модуля.','Цель неуязвима.'):
+                                self.assertIn(text,modal.inner_text())
+                            page.screenshot(path=f'/tmp/sphol-expanded-preview/browser-sortie-{width}.png',full_page=True)
+                            self.assertEqual(server.group_battles(123,self.store.rows(123),{}),grouping)
                             context.close()
                         browser.close()
                 # Existing v1 credential still captures and uploads independently.
@@ -134,7 +165,7 @@ if SERVER:
                     saved = ' '.join(r[0] for r in db.execute('SELECT payload FROM collector_private_events'))
                     self.assertNotIn('Synthetic Commander',saved)
                     self.assertNotIn('private',saved)
-                    self.assertEqual(db.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],2)
+                    self.assertEqual(db.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],3)
                 # Exact stable retry is acknowledged, not duplicated.
                 self.assertEqual(self.request('events',payload,token=credentials['access_token'])[1]['accepted_ids'],[e['id'] for e in payload['events']])
 else:

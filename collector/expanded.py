@@ -41,8 +41,9 @@ class ExpandedQueue(PendingQueue):
         super().__init__(directory / 'pending-v2.sqlite3', **limits)
 
     def put(self, event_id, event):
-        if event.get('schema') != 2:
-            raise ValueError('Expanded queue requires schema 2')
+        if (event.get('schema') != 2 or not isinstance(event.get('text'), str)
+                or sanitize(event.get('category'), event['text']) != event['text']):
+            raise ValueError('Expanded queue requires a canonical safe signal')
         super().put(event_id, event)
 
 

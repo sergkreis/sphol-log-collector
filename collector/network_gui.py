@@ -70,6 +70,8 @@ class ConnectedApp(App):
         self.updates = UpdateControls(self)
         self.open_site = ttk.Button(self.footer, text='Открыть SPHOL', command=lambda: webbrowser.open(ORIGIN))
         self.open_site.pack(side='right')
+        window.update_idletasks()
+        window.geometry(f'780x{max(700, self.frame.winfo_reqheight())}')
 
     def refresh_controls(self):
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
@@ -148,6 +150,9 @@ class ConnectedApp(App):
         self.upload_problem = False
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
+        expanded = getattr(self, 'expanded', None)
+        if self.tailer and expanded and expanded.uploader:
+            expanded.start(integrated=True)
         self.refresh_controls()
 
     def stop(self):
@@ -174,13 +179,19 @@ class ConnectedApp(App):
             expanded.close()
 
     def unpair(self):
-        if self.busy:
+        if self.busy or (getattr(self, 'expanded', None) and self.expanded.busy):
             return
         if not messagebox.askyesno('Удалить привязку?', 'Удалить локальный ключ и ВСЮ очередь событий? Отозвать доступ устройства на сайте нужно отдельно.'):
             return
         self.stop()
         self.store.clear()
         self.queue.clear()
+        expanded = getattr(self, 'expanded', None)
+        if expanded:
+            expanded.store.clear()
+            expanded.queue.clear()
+            expanded.uploader = expanded.pairing = None
+            expanded.code.set('')
         self.uploader = self.pairing = None
         self.clear_pairing_code()
         self.identity.config(text='Персонаж не привязан')

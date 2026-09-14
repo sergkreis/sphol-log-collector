@@ -158,6 +158,22 @@ def render(destination):
                 browser.assert_called_once_with(ORIGIN)
                 assert values() == [15, 15, 4]
                 assert list(queue.db.execute('SELECT * FROM pending')) == legacy
+                # Real integrated main control: scoped observations, independent ACK.
+                app.expanded.uploader = Uploader({**app.uploader.credentials, 'scope':'gamelogs:write'}, http=http)
+                app.main_button.invoke()
+                assert app.expanded.enabled and app.expanded.tailer
+                when = (datetime.now(timezone.utc)+timedelta(seconds=2)).strftime('%Y.%m.%d %H:%M:%S')
+                (logs/'expanded.txt').write_text('Listener: CoolDoog\n-----\n'+''.join(f'[ {when} ] (notify) {text}\n' for text in ('Переход в варп-режим по приказу Synthetic Commander','Цель неуязвима.','private unknown')),encoding='utf-8')
+                app.expanded.tick()
+                deadline=time.monotonic()+3
+                while app.expanded.results.empty() and time.monotonic()<deadline:
+                    time.sleep(.01)
+                app.expanded.tick()
+                assert app.expanded.ack_count == 2 and app.expanded.queue.count() == 0
+                assert values() == [15,15,4]
+                shot('expanded-ack')
+                app.main_button.invoke()
+                assert not app.expanded.enabled and app.expanded.tailer is None
                 assert errors == [], errors
                 print(f'PASS: real Tk callbacks, parser/queue commits, validated ACK, empty polls, retry recovery, legacy preservation, capture error, updates, disclosure, generic URL; {len(screenshots)} screenshots: {", ".join(screenshots)}')
             finally:
