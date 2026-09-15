@@ -47,7 +47,7 @@ if ($rules.Count -ne 2 -or @($rules | Where-Object {{$_.Enabled -ne 'True' -or $
         yield
     finally:
         subprocess.run(['powershell', '-NoProfile', '-Command',
-                        f"Get-NetFirewallRule -Group '{group}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule"], check=True)
+                        f"$ErrorActionPreference = 'Stop'; Get-NetFirewallRule | Where-Object {{$_.Group -eq '{group}'}} | Remove-NetFirewallRule"], check=True)
 
 
 def windows(target):
@@ -72,7 +72,9 @@ def main():
     replacement = Path(sys.argv[1]).absolute().read_bytes()
     old = download(f'https://github.com/sergkreis/sphol-log-collector/releases/download/v{OLD_VERSION}/' + ASSET, 128 * 1024 * 1024)
     assert hashlib.sha256(old).hexdigest() == OLD_SHA
-    with tempfile.TemporaryDirectory(prefix='sphol-cross-version-') as temp, isolated_children(Path(temp)):
+    # Firewall program filters reject Windows 8.3 TEMP aliases (RUNNER~1).
+    # A private directory under the checkout has a canonical long path.
+    with tempfile.TemporaryDirectory(prefix='sphol-cross-version-', dir=Path.cwd()) as temp, isolated_children(Path(temp)):
         root = Path(temp)
         state = root / 'SPHOLLogCollector'
         state.mkdir()
