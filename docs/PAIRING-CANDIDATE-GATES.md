@@ -1,83 +1,32 @@
-# Pairing recovery candidate: gates, not a release
+# Pairing recovery candidate gates
 
-No version, protocol or updater interface change. No publication, push,
-workflow dispatch, deployment or production pairing is authorized by this work.
+Candidate version: 0.3.3. Scoped candidate-branch publication and manual Windows CI are authorized; stable GitHub release and server deployment are not.
 
-## Locally reproducible offline gates
-
-With Python 3.11, Tk, Pillow and Xvfb installed, from the repository root:
+## Offline source gates
 
 ```sh
-xvfb-run -a /tmp/sphol-pairing-venv/bin/python -m unittest discover -s tests -v
-xvfb-run -a /tmp/sphol-pairing-venv/bin/python run_collector.py --synthetic-smoke-report /tmp/pairing-smoke.txt
+EVE_DASHBOARD_NO_COLLECTOR=1 SPHOL_SERVER_PATH=/tmp/sphol-dis-nickname-partial xvfb-run -a /tmp/sphol-pairing-venv/bin/python -m unittest discover -s tests -v
+EVE_DASHBOARD_NO_COLLECTOR=1 xvfb-run -a /tmp/sphol-pairing-venv/bin/python run_collector.py --synthetic-smoke-report /tmp/pairing-smoke.txt
 ```
 
-The second command exercises the **same entrypoint** packaged into the EXE,
-not a frozen Windows binary. It includes real Start/Yes, Retry, Open Browser,
-Copy Link/clipboard equality, browser false/exception/success, stale worker,
-timeout and expiry controls. Sockets and credential loading are blocked or
-injected. Existing unified stream, connection, capture and shutdown gates remain.
-Footer, settings and recovery controls are checked at 780x700 and 760x660.
-Secondary stream summaries receive remaining space during a tall recovery notice;
-settings/diagnostics and primary actions retain priority. Offline dashboard and
-expanded-settings preview assertions are unchanged.
+The source entrypoint is not a frozen binary. Its real-button fixtures exercise Start/consent, retry, browser reopen, copy/clipboard equality, browser failures, stale responses, expiry, late irreversible redemption, storage failure/retry and explicit resume. Queue and credential preservation remains mandatory. An in-flight token worker can block normal close indefinitely; this is not bounded lossless shutdown or crash recovery.
 
-Expected Linux exclusions are native DPAPI and server contract integration
-(`SPHOL_SERVER_PATH` needs a separately approved server checkout). They are not
-new skips. Windows/frozen acceptance is still required.
+## Native Windows gates
 
-## Exact native build gates (PowerShell, Windows x64 Python 3.11.9)
+The manual-only `.github/workflows/windows-build.yml` runs the full source suite, native Tk fixtures, hash-locked PyInstaller build, actual frozen synthetic entrypoint (requiring named pairing and late-token successes), isolated dummy updater and actual previous-release migration. Only read-only repository permissions are used; there is no release publication step.
 
-Run only in an isolated candidate checkout and synthetic state, never a pilot's
-live collector directory:
+Pillow is absent from the existing Windows dependency lock. Optional screenshot source fixtures may skip explicitly; no unpinned dependency was added. Core native real-button and frozen gates do not depend on Pillow. Linux screenshot/layout tests remain in the offline suite.
 
-```powershell
-python -m unittest discover -s tests -v
-if ($LASTEXITCODE -ne 0) { throw 'Source tests failed' }
-python -m unittest tools.native_gui_smoke tools.native_single_smoke tools.native_pairing_smoke -v
-if ($LASTEXITCODE -ne 0) { throw 'Native Tk failed' }
-python -m pip install --require-hashes --only-binary=":all:" -r requirements-build.txt
-if ($LASTEXITCODE -ne 0) { throw 'Build dependencies failed' }
-python -m PyInstaller --clean --noconfirm --onefile --windowed --name SPHOLLogCollector run_collector.py
-if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-$env:SPHOL_SMOKE_EVIDENCE = 'smoke-reports'
-New-Item -ItemType Directory -Force smoke-reports | Out-Null
-$report = Join-Path $pwd 'smoke-reports/frozen-smoke.txt'
-$p = Start-Process dist/SPHOLLogCollector.exe -ArgumentList @('--synthetic-smoke-report', "`"$report`"") -PassThru
-if (-not $p.WaitForExit(90000)) { $p.Kill(); throw 'Frozen smoke timeout' }
-if ($p.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Frozen smoke failed' }
-Get-Content $report
-if (-not (Select-String $report -Pattern '^OK$' -Quiet)) { throw 'Missing OK' }
-if (-not (Select-String $report -Pattern '^test_visible_retry_consent_expiry_stale_and_copy .* \.\.\. ok$' -Quiet)) { throw 'Pairing gate absent' }
-Get-FileHash dist/SPHOLLogCollector.exe -Algorithm SHA256
-git rev-parse HEAD
-```
+## Previous release and isolation
 
-The manual-only, read-only-permission `.github/workflows/windows-build.yml`
-contains these source/native/frozen gates and retains candidate artifacts and
-synthetic evidence, including on failure. It does not publish releases.
-Pillow is not in the existing Windows build lock: install a reviewed pinned
-Windows Pillow test dependency before treating the optional screenshot-based
-source dashboard test as executed on Windows; native real-button/frozen tests
-above do not depend on Pillow.
+The latest published release was queried live and its actual v0.3.2 EXE downloaded. SHA256SUMS.txt, update-manifest.json and calculated EXE SHA agree:
 
-## Remaining release blockers / workflow audit
+`4f3297f1bbdc8b7ca0cd09875935ba1d5bb87385c25512428d6c9cdf768b6c8e`
 
-- No Windows executor or CI dispatch authorization in this task: Windows build,
-  DPAPI, frozen EXE and interactive default-browser acceptance remain unexecuted.
-- Existing cross-version job is pinned to **v0.3.1**, not the supplied handoff's
-  latest v0.3.2. Its incorrect v0.3.0 result label is corrected, but it must be
-  repinned using freshly verified release metadata/digest before release. Do not
-  call that job evidence for migration from v0.3.2.
-- That cross-version fixture launches normal old/new EXEs with synthetic stored
-  credentials; unlike the explicit synthetic entrypoint it does not block socket
-  access. A normal connection probe can reach production. Add external egress
-  isolation for both EXEs before running it under an offline-only approval.
-- Existing cross-version replacement forcibly exits its parent: byte retention
-  and DPAPI roundtrip are not the normal user-confirmed updater experience.
-- Parent must approve candidate version selection, source review, any push/CI
-  dispatch, previous-release download and release/deployment separately. Keep
-  current version unchanged until then. Artifacts are not an updater offer.
-- Real SSO approval, credential redemption and actual upload ACK acceptance must
-  be verified separately; synthetic browser mocks cannot identify the affected
-  pilots' original network/browser root cause.
+The migration fixture derives its URL and report label from `OLD_VERSION = '0.3.2'` and checks this digest before execution. It requires a disposable GitHub Windows runner, refuses existing Documents/EVE/logs, uses temporary synthetic LOCALAPPDATA/APPDATA/profile/temp directories, and checks enabled firewall profiles plus explicit outbound-block rules for both executable paths before launching any old/helper/new child. The new executable replaces the same blocked target path. Setup/download traffic remains available to the runner, not these collector processes. Rules are removed in fixture cleanup after child termination.
+
+Migration proves actual replacement/relaunch, unchanged seeded queue/credential bytes and native DPAPI decryptability before/after. It forces the old parent to exit, so it does not prove the normal user-confirmed updater dialog or identity shown by both ordinary EXEs. The separate frozen updater fixture exercises the confirmation path against isolated dummies.
+
+## Handoff limitations
+
+Actions artifacts are unsigned candidates, not an offer through the Update button. Real SSO, affected-machine browser/network behavior, production redemption and actual upload ACKs are separate acceptance. No real pilot logs, credentials, pairing challenge or server deployment belongs in this public candidate. Release selection/discovery and stable publication remain parent-owned.

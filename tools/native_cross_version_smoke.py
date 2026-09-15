@@ -1,4 +1,4 @@
-"""Pinned released 0.3.1 helper replaces real collector, isolated CI only.
+"""Pinned published helper replaces real collector, isolated CI only.
 No capture or pairing is started. Parent exit is forced in this fixture;
 this tests real replacement/relaunch, not the interactive confirmation dialog.
 """
@@ -15,8 +15,39 @@ from collector.credentials import CredentialStore
 from collector.expanded import ExpandedQueue
 from collector.updater import ASSET, clean_env, download
 
-# Verified against GitHub release asset digest (v0.3.1).
-OLD_SHA = '4e57ce25baf1f7424e2c22bffeb0fe4fcaaf0b2df5d80966c3e9a3567080a86c'
+# Verified downloaded public EXE against SHA256SUMS and update manifest.
+OLD_VERSION = '0.3.2'
+OLD_SHA = '4f3297f1bbdc8b7ca0cd09875935ba1d5bb87385c25512428d6c9cdf768b6c8e'
+
+
+from contextlib import contextmanager
+
+
+@contextmanager
+def isolated_children(root):
+    """Fail closed; only disposable GitHub Windows runners may run this fixture."""
+    assert os.environ.get('GITHUB_ACTIONS') == 'true', 'Disposable GitHub runner required'
+    group = 'SPHOL-migration-' + root.name
+    paths = [root / ASSET, root / 'update-pinned' / 'update-helper.exe']
+    quoted = ','.join("'" + str(p).replace("'", "''") + "'" for p in paths)
+    script = f"""
+$ErrorActionPreference = 'Stop'
+$logs = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'EVE/logs'
+if (Test-Path $logs) {{ throw 'Refusing host with existing EVE logs' }}
+if (@(Get-NetFirewallProfile | Where-Object {{-not $_.Enabled}}).Count) {{ throw 'Firewall profile disabled' }}
+foreach ($program in @({quoted})) {{
+  New-NetFirewallRule -DisplayName '{group}' -Group '{group}' -Direction Outbound -Action Block -Program $program -Profile Any -Enabled True | Out-Null
+}}
+$rules = @(Get-NetFirewallRule -Group '{group}')
+if ($rules.Count -ne 2 -or @($rules | Where-Object {{$_.Enabled -ne 'True' -or $_.Action -ne 'Block'}}).Count) {{ throw 'Missing egress block' }}
+"""
+    try:
+        subprocess.run(['powershell', '-NoProfile', '-Command', script], check=True)
+        print('Isolation: firewall outbound block verified for old/new collector and helper; no host EVE logs; synthetic LOCALAPPDATA only', flush=True)
+        yield
+    finally:
+        subprocess.run(['powershell', '-NoProfile', '-Command',
+                        f"Get-NetFirewallRule -Group '{group}' -ErrorAction SilentlyContinue | Remove-NetFirewallRule"], check=True)
 
 
 def windows(target):
@@ -39,9 +70,9 @@ def wait_for(predicate, seconds=40):
 def main():
     assert os.name == 'nt', 'Windows required'
     replacement = Path(sys.argv[1]).absolute().read_bytes()
-    old = download('https://github.com/sergkreis/sphol-log-collector/releases/download/v0.3.1/' + ASSET, 128 * 1024 * 1024)
+    old = download(f'https://github.com/sergkreis/sphol-log-collector/releases/download/v{OLD_VERSION}/' + ASSET, 128 * 1024 * 1024)
     assert hashlib.sha256(old).hexdigest() == OLD_SHA
-    with tempfile.TemporaryDirectory(prefix='sphol-cross-version-') as temp:
+    with tempfile.TemporaryDirectory(prefix='sphol-cross-version-') as temp, isolated_children(Path(temp)):
         root = Path(temp)
         state = root / 'SPHOLLogCollector'
         state.mkdir()
@@ -69,7 +100,7 @@ def main():
         helper_path = stage / 'update-helper.exe'
         helper_path.write_bytes(old)
         env = clean_env()
-        env.update(LOCALAPPDATA=str(root), TEMP=str(root), TMP=str(root))
+        env.update(LOCALAPPDATA=str(root), APPDATA=str(root), USERPROFILE=str(root), HOME=str(root), TEMP=str(root), TMP=str(root))
         original = subprocess.Popen([str(target)], cwd=root, env=env)
         helper = None
         restarted = []
@@ -93,7 +124,7 @@ def main():
             assert {'pending.sqlite3', 'pending-v2.sqlite3', 'credentials.dpapi', 'credentials-v2.dpapi'} <= before.keys()
             for name, scope in (('credentials.dpapi', 'combat:write'), ('credentials-v2.dpapi', 'gamelogs:write')):
                 assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
-            print('OK: published frozen v0.3.1 pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
+            print(f'OK: published frozen v{OLD_VERSION} pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
         finally:
             for pid in windows(target):
                 subprocess.run(['taskkill', '/PID', pid, '/T', '/F'], check=False)

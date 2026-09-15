@@ -48,9 +48,16 @@ class RecoveryTk(unittest.TestCase):
                     deadline = time.monotonic()+3
                     while app.results.empty() and time.monotonic() < deadline:
                         time.sleep(.01)
-                    with patch.object(app.store, 'save') as save, patch.object(app, 'start') as start:
+                    with patch.object(app.store, 'save', side_effect=[OSError('synthetic storage failure'), None]) as save, patch.object(app, 'start') as start:
                         app.network_tick()
-                        save.assert_called_once_with(token)
+                        self.assertEqual(app.recovered_token, token)
+                        self.assertFalse(app.close())
+                        self.assertTrue(app.retry_button.instate(['!disabled']))
+                        app.retry_button.invoke()
+                        app.network_tick()
+                        self.assertEqual(save.call_count, 2)
+                        save.assert_called_with(token)
+                        self.assertIsNone(app.recovered_token)
                         start.assert_not_called()
                     self.assertIsNone(app.tailer)
                     self.assertFalse(app.upload_enabled)
