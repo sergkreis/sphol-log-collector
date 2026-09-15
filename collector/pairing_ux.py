@@ -5,6 +5,7 @@ import re
 import threading
 import time
 import webbrowser
+from .diagnostics import emit
 from tkinter import ttk, TclError
 from .transport import PAIR_URI, HTTPFailure, ProtocolError
 
@@ -85,8 +86,10 @@ class PairingUX:
         def run():
             try:
                 opened = bool(webbrowser.open(url))
-            except Exception:
+            except Exception as exc:
+                emit('pair.browser', 'error', error=exc)
                 opened = False
+            emit('pair.browser', 'ok' if opened else 'error')
             self.browser_results.put((owner, opened))
         threading.Thread(target=run, daemon=True).start()
 
@@ -99,6 +102,7 @@ class PairingUX:
             if not self.browser_job or time.monotonic() < self.browser_job[1]:
                 return
             owner, opened = self.browser_job[0], False
+            emit('pair.browser', 'error', error=TimeoutError())
         if not self.browser_job or self.browser_job[0] is not owner:
             return
         self.browser_job = None
@@ -109,6 +113,7 @@ class PairingUX:
             'Ссылка готова, но браузер не открылся. Нажмите «Открыть подтверждение в браузере» или «Скопировать ссылку» и вставьте её в браузер.'))
 
     def pairing_failed(self, text):
+        emit('pair.failed', 'error')
         self.pair_attempt = getattr(self, 'pair_attempt', 0) + 1
         self.pair_job = None
         self.browser_job = None

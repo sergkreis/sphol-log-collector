@@ -9,6 +9,7 @@ import re
 import secrets
 import ssl
 import time
+from .diagnostics import emit, observed
 
 ORIGIN = 'https://sphol.com'
 PAIR_URI = ORIGIN + '/collector/pair'
@@ -60,6 +61,7 @@ class HTTPS:
         try:
             connection.request('POST', path, body=body, headers=headers)
             response = connection.getresponse()
+            emit('http.response', status=response.status)
             raw = response.read(MAX_BODY + 1)
             if len(raw) > MAX_BODY:
                 raise ProtocolError('Response exceeds byte limit')
@@ -123,6 +125,7 @@ class Pairing:
         self.verifier = secrets.token_urlsafe(32)
         self.deadline = self.next_poll = 0
 
+    @observed('pair.start')
     def start(self):
         challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode('ascii')).digest()).rstrip(b'=').decode()
         status, data = self.http.post('/api/collector/v1/pairings/browser' if self.browser else '/api/collector/v1/pairings', {
@@ -142,6 +145,7 @@ class Pairing:
         self.next_poll = time.monotonic() + self.interval
         return data['user_code']
 
+    @observed('pair.poll')
     def poll(self):
         now = time.monotonic()
         if now >= self.deadline:
@@ -160,6 +164,7 @@ class Pairing:
         result = validate_credentials(data)
         if result['scope'] != self.scope:
             raise ProtocolError('Requested scope was not approved; expanded mode unavailable')
+        emit('pair.redeem')
         self.deadline = 0  # Redemption must never be repeated.
         self.secret = self.verifier = ''
         return result
@@ -220,6 +225,7 @@ class Uploader:
         self.failures = 0
         self.paused = False
 
+    @observed('upload.send', successes=False)
     def upload(self, queue):
         if self.paused or time.monotonic() < self.next_try:
             return None
@@ -228,12 +234,15 @@ class Uploader:
             payload = build_batch(queue, self.credentials)
             if not payload['events']:
                 return 'Нет событий привязанного персонажа; остальные остаются в очереди.'
+            emit('upload.send', 'start', count=len(payload['events']))
             status, data = self.http.post('/api/collector/v1/events', payload, self.credentials['access_token'])
+            emit('http.response', status=status)
             if status != 200:
                 raise HTTPFailure(status)
             accepted, rejected = validate_ack(data, payload['events'])
             queue.acknowledge(accepted)
             self.failures = 0
+            emit('upload.ack', accepted=len(accepted), rejected=len(rejected))
             if rejected:
                 self.paused = True
                 return f'Сервер отклонил события: {len(rejected)}. Они сохранены; отправка приостановлена.'
@@ -247,6 +256,7 @@ class Uploader:
             if isinstance(error, HTTPFailure):
                 delay = max(delay, error.retry_after)
             self.next_try = time.monotonic() + delay
+            emit('upload.retry', 'error', error=error, failures=self.failures, delay=int(delay))
             return 'Сеть или сервер недоступны; очередь сохранена, повтор запланирован.'
         except ProtocolError:
             self.paused = True

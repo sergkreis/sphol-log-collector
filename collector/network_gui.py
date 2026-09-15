@@ -3,6 +3,7 @@ import queue as messages
 import threading
 import time
 import webbrowser
+from .diagnostics import emit
 from tkinter import ttk, messagebox
 from .gui import App, tk
 from .credentials import CredentialStore
@@ -253,6 +254,8 @@ class ConnectedApp(PairingUX, App):
         self.refresh_controls()
 
     def wait_for_redemption(self):
+        if self.pair_job is not None:
+            emit('pair.wait', 'error', error=TimeoutError())
         self.stop()
         self.pair_job = None
         self.pairing_notice('SPHOL отвечает дольше обычного. Сбор остановлен; ждём результат выдачи ключа. Повтор и выход временно заблокированы, чтобы не потерять привязку. После сохранения нажмите «Начать сбор».')

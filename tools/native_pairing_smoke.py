@@ -15,6 +15,12 @@ from collector.transport import PAIR_URI
 
 @unittest.skipUnless(os.environ.get('DISPLAY') or os.name == 'nt', 'native display required')
 class RecoveryTk(unittest.TestCase):
+    def tearDown(self):
+        # Collect destroyed Tk cycles on their owning thread, before later HTTP
+        # fixture workers can trigger cyclic GC and Tcl_AsyncDelete aborts.
+        import gc
+        gc.collect()
+
     def test_late_redemption_waits_and_requires_explicit_resume(self):
         import threading
         from unittest.mock import Mock

@@ -3,7 +3,8 @@ import ctypes
 import os
 from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
+from .diagnostics import initialize, emit
 from .core import PendingQueue, Tailer, QueueFull
 from .local_capture import LocalCapture, CaptureStopped
 
@@ -26,6 +27,12 @@ def documents():
 class App:
     def __init__(self, window, log_root, queue):
         self.window, self.log_root, self.queue = window, log_root, queue
+        self.diagnostics = None
+        try:
+            self.diagnostics = initialize(queue.path.parent)
+            self.diagnostics.inspect_logs(log_root)
+        except Exception:
+            pass  # Optional diagnostics must not prevent capture initialization.
         self.tailer = None
         self.local_capture = None
         from .theme import apply_theme
@@ -103,8 +110,31 @@ class App:
         # stream summaries consume the remaining vertical space.
         self.settings_button.pack(side='bottom', anchor='w', pady=(8, 0), after=self.footer)
         ttk.Separator(self.footer).pack(fill='x', pady=(0, 12))
+        self.support_button = ttk.Button(self.header, text='Сохранить отчёт для поддержки', command=self.export_support)
+        self.support_button.pack(side='right')
+        self.support_status = ttk.Label(self.footer, text='Диагностика хранится локально; игровые тексты и ключи не записываются.', wraplength=680)
         window.protocol('WM_DELETE_WINDOW', self.close)
         self.tick()
+
+    def export_support(self):
+        self.support_status.pack(anchor='w')
+        try:
+            from datetime import datetime
+            target = filedialog.asksaveasfilename(parent=self.window,
+                title='Сохранить отчёт для поддержки',
+                initialfile='SPHOL-support-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '.json',
+                defaultextension='.json', filetypes=[('Отчёт поддержки', '*.json')])
+            if not target:
+                self.support_status.config(text='Сохранение отменено. Ничего не отправлено.')
+                return
+            if self.diagnostics is None:
+                self.diagnostics = initialize(self.queue.path.parent)
+            self.diagnostics.inspect_logs(self.log_root)
+            self.diagnostics.export(target)
+            self.support_status.config(text='Отчёт сохранён. Можно отправить этот JSON-файл поддержке в Telegram. Автоматической отправки нет.')
+        except Exception as exc:
+            emit('export', 'error', error=exc)
+            self.support_status.config(text='Не удалось сохранить отчёт. Выберите другую папку вне хранилища сборщика и файл .json.')
 
     def toggle_settings(self):
         self.settings_open = not self.settings_open
@@ -174,12 +204,15 @@ class App:
             return
         try:
             self.tailer = Tailer(self.log_root, self.queue)
+            emit('capture.start', count=len(self.tailer.files))
             self.status.set('Сбор включён — читаются новые боевые события.')
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            emit('capture.start', 'error', error=exc)
             self.status.set('Сбор выключен — проверьте доступ к папке журналов.')
         self.capture_controls()
 
     def stop(self):
+        emit('capture.stop')
         self.stop_local()
         self.tailer = None
         self.status.set('Сбор выключен — очередь сохранена на компьютере.')
@@ -202,13 +235,16 @@ class App:
                 self.local_status.set('Локальная запись остановлена: ' + reason + ' Оригиналы остаются в Gamelogs.')
         if self.tailer:
             try:
-                self.tailer.poll()
+                count = self.tailer.poll()
+                if count or self.tailer.unattributed_files:
+                    emit('capture.poll', count=count, unattributed=self.tailer.unattributed_files)
                 self.status.set('Сбор включён — читаются новые боевые события.' if not self.tailer.unattributed_files else 'Сбор включён. Отдельные события ждут проверенного заголовка персонажа; остальные журналы читаются.')
             except QueueFull:
                 self.status.set('Сбор приостановлен: очередь заполнена. Эти данные ещё не отправлены.')
-            except Exception:
+            except Exception as exc:
+                emit('capture.poll', 'error', error=exc)
                 self.stop()
-                self.status.set('Сбор выключен после ошибки чтения. Проверьте папку журналов.')
+                self.status.set('Сбор выключен после ошибки чтения. Сохраните отчёт для поддержки; очередь сохранена.')
         self.pending.set(f'В очереди на компьютере: {self.queue.count()} событий')
         if hasattr(self, 'main_button'):
             from .queue_status import queue_summary
@@ -224,6 +260,7 @@ class App:
             return False
         self.stop_local()
         self.tailer = None
+        emit('app.close')
         self.queue.close()
         self.window.destroy()
         return True
@@ -232,13 +269,18 @@ class App:
 def main():
     window = tk.Tk()
     try:
+        try:
+            initialize(Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector')
+        except Exception:
+            pass
         from .updater import instance_lock
         instance = instance_lock(Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector')
         root = documents() / 'EVE' / 'logs' / 'Gamelogs'
         state = Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector' / 'pending.sqlite3'
         from .network_gui import ConnectedApp
         ConnectedApp(window, root, PendingQueue(state))
-    except Exception:
+    except Exception as exc:
+        emit('app.init', 'error', error=exc)
         messagebox.showerror('Не удалось открыть сборщик', 'Проверьте доступ к папке журналов и локальному хранилищу.')
         window.destroy()
         return

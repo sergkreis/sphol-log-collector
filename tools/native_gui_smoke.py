@@ -22,6 +22,33 @@ from collector.transport import Pairing
 
 
 class NativeGuiSmoke(unittest.TestCase):
+    def tearDown(self):
+        # Collect destroyed Tk cycles on their owning thread, before later HTTP
+        # fixture workers can trigger cyclic GC and Tcl_AsyncDelete aborts.
+        import gc
+        gc.collect()
+
+    def test_diagnostics_initialization_failure_does_not_block_capture(self):
+        from collector.gui import App
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'Gamelogs'
+            root.mkdir()
+            with closing(PendingQueue(Path(temp) / 'pending.sqlite3')) as queue:
+                window = tk.Tk()
+                try:
+                    with patch('collector.gui.initialize', side_effect=PermissionError('private path secret')):
+                        app = App(window, root, queue)
+                    app.start()
+                    self.assertIsNotNone(app.tailer)
+                    with patch('collector.diagnostics._sink') as sink:
+                        sink.record.side_effect = OSError('private token secret')
+                        app.tick()
+                        self.assertIsNotNone(app.tailer)
+                    app.stop()
+                    self.assertEqual(queue.count(), 0)
+                finally:
+                    window.destroy()
+
     def test_capture_stop_close_and_durable_reopen(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'Gamelogs'
@@ -38,6 +65,30 @@ class NativeGuiSmoke(unittest.TestCase):
                 try:
                     app = ConnectedApp(window, root, queue)
                     window.update()
+                    # Invoke the real export button; native/frozen runner includes this gate.
+                    with tempfile.TemporaryDirectory() as exports:
+                        report = Path(exports) / 'support.json'
+                        window.clipboard_clear()
+                        window.clipboard_append('unchanged support clipboard')
+                        with patch('collector.gui.filedialog.asksaveasfilename', return_value=str(report)) as dialog:
+                            app.support_button.invoke()
+                            dialog.assert_called_once()
+                            self.assertTrue(dialog.call_args.kwargs['initialfile'].startswith('SPHOL-support-'))
+                        self.assertTrue(report.is_file())
+                        import json
+                        support = json.loads(report.read_text(encoding='utf-8'))
+                        self.assertEqual(support['schema'], 1)
+                        self.assertNotIn('Synthetic Smoke Pilot', report.read_text())
+                        self.assertNotIn(str(root), report.read_text())
+                        self.assertEqual(window.clipboard_get(), 'unchanged support clipboard')
+                        self.assertIn('Отчёт сохранён', app.support_status.cget('text'))
+                        with patch('collector.gui.filedialog.asksaveasfilename', return_value=''):
+                            app.support_button.invoke()
+                        self.assertIn('отменено', app.support_status.cget('text'))
+                        with patch('collector.gui.filedialog.asksaveasfilename', return_value=str(db)):
+                            app.support_button.invoke()
+                        self.assertIn('Не удалось', app.support_status.cget('text'))
+                        self.assertEqual(queue.count(), 0)
                     # Initialization and independent default-off consent in real Tk.
                     self.assertFalse(app.expanded.enabled)
                     self.assertIsNone(app.expanded.tailer)

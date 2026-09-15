@@ -70,6 +70,12 @@ class CounterEvidenceTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('DISPLAY'), 'Actual Tk acceptance requires Xvfb or a desktop')
 class ActualTkTests(unittest.TestCase):
+    def tearDown(self):
+        # Collect destroyed Tk cycles on their owning thread, before later HTTP
+        # fixture workers can trigger cyclic GC and Tcl_AsyncDelete aborts.
+        import gc
+        gc.collect()
+
     def test_actual_callbacks_and_synthetic_protocol(self):
         from tools.gui_preview import render
         with tempfile.TemporaryDirectory() as temp:

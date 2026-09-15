@@ -11,6 +11,13 @@ import re
 import sqlite3
 import stat
 import uuid
+from .diagnostics import observed
+
+
+class ReadFailure(OSError):
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
 
 MAX_LINE = 8192
 LINE = re.compile(r'^\[\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})\s*\]\s*\(combat\)\s*(.+)$')
@@ -35,18 +42,19 @@ def parse_line(raw: bytes, listener: str = '') -> dict | None:
             'listener': listener[:128], 'text': text}
 
 
+@observed('logs.open', successes=False)
 def safe_open(path: Path):
     """Reject symlinks, devices and path swaps; never open a game file writable."""
     before = path.lstat()
     if (not stat.S_ISREG(before.st_mode) or path.is_symlink()
             or getattr(before, 'st_file_attributes', 0) & 0x400):
-        raise OSError('Not a regular log file')
+        raise ReadFailure('unsafe_file')
     flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
     fd = os.open(path, flags)
     try:
         after = os.fstat(fd)
         if not stat.S_ISREG(after.st_mode) or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-            raise OSError('Log changed during open')
+            raise ReadFailure('changed_file')
         return os.fdopen(fd, 'rb')
     except BaseException:
         os.close(fd)
@@ -119,10 +127,11 @@ class PendingQueue:
 
 class Tailer:
     """One foreground capture session. Existing files start at EOF, not history."""
+    @observed('capture.start')
     def __init__(self, root: Path, queue: PendingQueue, started=None, parser=parse_line):
         self.root = Path(root).resolve(strict=True)
         if not self.root.is_dir():
-            raise OSError('Gamelogs directory is missing')
+            raise NotADirectoryError(20, 'Gamelogs directory is missing')
         self.queue = queue
         self.parser = parser
         self.started = started or datetime.now(timezone.utc)
@@ -138,15 +147,20 @@ class Tailer:
                 partial = s.st_size > 0 and f.read(1) != b'\n'
                 self.files[(s.st_dev, s.st_ino)] = [s.st_size, listener, 0, partial]
 
+    @observed('logs.paths', successes=False)
     def paths(self):
         # No recursion; never enumerate Chatlogs. Bound resource use visibly.
         paths = []
-        for p in self.root.glob('*.txt'):
-            if p.is_symlink() or p.resolve().parent != self.root:
-                continue
-            paths.append(p)
-            if len(paths) > 512:
-                raise OSError('More than 512 log files; archive old Gamelogs before starting')
+        with os.scandir(self.root) as entries:
+            for entry in entries:
+                if not os.path.normcase(entry.name).endswith('.txt'):
+                    continue
+                p = self.root / entry.name
+                if p.is_symlink() or p.resolve().parent != self.root:
+                    continue
+                paths.append(p)
+                if len(paths) > 512:
+                    raise ReadFailure('file_limit')
         return sorted(paths)
 
     @staticmethod
@@ -181,6 +195,7 @@ class Tailer:
 
         return ''
 
+    @observed('capture.poll', successes=False)
     def poll(self):
         accepted = 0
         self.unattributed_files = 0
@@ -194,7 +209,7 @@ class Tailer:
                 key = (s.st_dev, s.st_ino)
                 if key not in self.files:
                     if len(self.files) >= 1024:
-                        raise OSError('Session file limit reached; stop and restart capture')
+                        raise ReadFailure('file_limit')
                     self.files[key] = [0, self.listener(f), 0, False]
                 state = self.files[key]
                 if s.st_size < state[0]:

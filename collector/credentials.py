@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import tempfile
 from .core import safe_open
+from .diagnostics import observed
 from .transport import decode, encode, validate_credentials
 
 
@@ -27,7 +28,7 @@ def crypt(raw, decrypt=False):
     function.restype = wintypes.BOOL
     # CRYPTPROTECT_UI_FORBIDDEN; deliberately NOT LOCAL_MACHINE.
     if not function(ctypes.byref(source), None, None, None, None, 1, ctypes.byref(result)):
-        raise OSError('Windows credential protection failed')
+        raise ctypes.WinError(ctypes.get_last_error())
     try:
         return ctypes.string_at(result.data, result.size)
     finally:
@@ -38,6 +39,7 @@ class CredentialStore:
     def __init__(self, path):
         self.path = Path(path)
 
+    @observed('credential.save')
     def save(self, credentials):
         raw = crypt(encode(validate_credentials(credentials)))
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -52,6 +54,7 @@ class CredentialStore:
             if os.path.exists(name):
                 os.unlink(name)
 
+    @observed('credential.load')
     def load(self):
         try:
             with safe_open(self.path) as stream:
