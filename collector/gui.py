@@ -35,7 +35,8 @@ class App:
         window.geometry('780x700')
         self.status = tk.StringVar(value='Сбор выключен — новые события не читаются.')
         self.pending = tk.StringVar()
-        self.frame = frame = ttk.Frame(window, padding=20)
+        # Keep horizontal breathing room without spending short-screen height.
+        self.frame = frame = ttk.Frame(window, padding=(20, 10))
         frame.pack(fill='both', expand=True)
         self.header = ttk.Frame(frame)
         self.header.pack(fill='x')
@@ -96,7 +97,11 @@ class App:
         self.dashboard.heading.pack(before=self.capture_area.pack_slaves()[0], anchor='w', pady=(0, 8))
 
         self.footer = ttk.Frame(self.frame)
-        self.footer.pack(side='bottom', fill='x', pady=(8, 0))
+        # Reserve footer height before top-packed content can consume it.
+        self.footer.pack(side='bottom', fill='x', pady=(8, 0), before=self.header)
+        # Recovery can be tall; keep diagnostics reachable before secondary
+        # stream summaries consume the remaining vertical space.
+        self.settings_button.pack(side='bottom', anchor='w', pady=(8, 0), after=self.footer)
         ttk.Separator(self.footer).pack(fill='x', pady=(0, 12))
         window.protocol('WM_DELETE_WINDOW', self.close)
         self.tick()

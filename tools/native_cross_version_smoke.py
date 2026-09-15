@@ -93,7 +93,7 @@ def main():
             assert {'pending.sqlite3', 'pending-v2.sqlite3', 'credentials.dpapi', 'credentials-v2.dpapi'} <= before.keys()
             for name, scope in (('credentials.dpapi', 'combat:write'), ('credentials-v2.dpapi', 'gamelogs:write')):
                 assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
-            print('OK: published frozen v0.3.0 pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
+            print('OK: published frozen v0.3.1 pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
         finally:
             for pid in windows(target):
                 subprocess.run(['taskkill', '/PID', pid, '/T', '/F'], check=False)

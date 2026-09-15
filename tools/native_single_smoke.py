@@ -67,9 +67,19 @@ class NativeSingleSmoke(unittest.TestCase):
                     app.pairing.browser_uri = PAIR_URI + '#' + proof
                     app.pairing.deadline = float('inf')
                     app.results.put(('pair', proof, None))
-                    with patch.object(app, 'work'), patch('collector.network_gui.webbrowser.open') as browser:
+                    with patch.object(app, 'work'), patch('collector.pairing_ux.webbrowser.open', return_value=True) as browser:
                         app.network_tick(); window.update()
-                        app.main_button.invoke()
+                        deadline = time.monotonic() + 3
+                        while app.browser_results.empty() and time.monotonic() < deadline:
+                            time.sleep(.01)
+                        self.assertFalse(app.browser_results.empty(), 'browser worker timed out')
+                        app.poll_browser(); app.refresh_controls()
+                        app.browser_button.invoke()
+                        deadline = time.monotonic() + 3
+                        while app.browser_results.empty() and time.monotonic() < deadline:
+                            time.sleep(.01)
+                        self.assertFalse(app.browser_results.empty(), 'reopen worker timed out')
+                        app.poll_browser(); app.refresh_controls()
                         self.assertEqual(browser.call_count, 2)
                         browser.assert_called_with(app.pairing.browser_uri)
                     self.assertEqual(app.code_field.get(), '')
