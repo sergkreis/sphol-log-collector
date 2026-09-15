@@ -15,9 +15,12 @@ from collector.credentials import CredentialStore
 from collector.expanded import ExpandedQueue
 from collector.updater import ASSET, clean_env, download
 
-# Verified downloaded public EXE against SHA256SUMS and update manifest.
-OLD_VERSION = '0.3.2'
-OLD_SHA = '4f3297f1bbdc8b7ca0cd09875935ba1d5bb87385c25512428d6c9cdf768b6c8e'
+# Verified public v0.3.3 EXE (asset 566383784, release 389425243) against
+# GitHub asset digest, SHA256SUMS and update manifest. SOURCE-COMMIT is
+# b285d17d6b890918d8e2786586c8d1c04085144c. Digest pins immutable bytes
+# even though GitHub does not mark this release itself immutable.
+OLD_VERSION = '0.3.3'
+OLD_SHA = '53d0a3f9dd6cb628c8ec635d910f38f72788f1d16c450540ae9c691f9c7220b6'
 
 
 from contextlib import contextmanager
