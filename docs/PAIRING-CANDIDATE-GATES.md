@@ -27,6 +27,12 @@ The migration fixture derives its URL and report label from `OLD_VERSION = '0.3.
 
 Migration proves actual replacement/relaunch, unchanged seeded queue/credential bytes and native DPAPI decryptability before/after. It forces the old parent to exit, so it does not prove the normal user-confirmed updater dialog or identity shown by both ordinary EXEs. The separate frozen updater fixture exercises the confirmation path against isolated dummies.
 
+## Migration startup regression
+
+Run 35014351870 passed the earlier source/native/frozen gates and firewall setup, then timed out waiting for the old EXE's SPHOL window. Its downloaded evidence contains no process-title snapshot or Python startup traceback, so it cannot by itself establish the exception. Evidence retained locally at `/tmp/sphol-cross-failed-evidence/`.
+
+The fixture set USERPROFILE to an empty directory but did not create Documents. Both actual EXEs call `SHGetKnownFolderPath` with flags=0 before constructing ConnectedApp; Windows verifies the folder exists, and startup errors open a modal whose title does not match `SPHOL*`. The fixture now creates private Documents and preflights the exact child environment using the same API, refusing any child-visible EVE logs. No firewall rule or migration assertion is removed, and the timeout is unchanged. A Windows regression reports the empty-profile lookup outcome before testing the repaired profile; migration failures now retain exact-path process/window diagnostics. Terminal Windows success is still required to confirm this diagnosis and correction. No product code changed.
+
 ## Handoff limitations
 
 Actions artifacts are unsigned candidates, not an offer through the Update button. Real SSO, affected-machine browser/network behavior, production redemption and actual upload ACKs are separate acceptance. No real pilot logs, credentials, pairing challenge or server deployment belongs in this public candidate. Release selection/discovery and stable publication remain parent-owned.

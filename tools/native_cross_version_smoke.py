@@ -50,6 +50,37 @@ if ($rules.Count -ne 2 -or @($rules | Where-Object {{$_.Enabled -ne 'True' -or $
                         f"$ErrorActionPreference = 'Stop'; Get-NetFirewallRule | Where-Object {{$_.Group -eq '{group}'}} | Remove-NetFirewallRule"], check=True)
 
 
+def child_env(root):
+    # SHGetKnownFolderPath(flags=0), used by the normal EXE, verifies that
+    # Documents exists. An empty synthetic USERPROFILE is not a valid profile:
+    # startup can stop in a modal error dialog before the SPHOL window exists.
+    (root / 'Documents').mkdir(exist_ok=True)
+    env = clean_env()
+    env.update(LOCALAPPDATA=str(root), APPDATA=str(root), USERPROFILE=str(root),
+               HOME=str(root), TEMP=str(root), TMP=str(root))
+    return env
+
+
+def check_child_documents(env):
+    # Resolve under the SAME environment as both frozen EXEs, not the runner's
+    # parent environment. Fail closed if Windows resolves host game logs.
+    code = """
+from collector.gui import documents
+path = documents()
+assert path.is_dir(), 'Child Documents directory missing'
+assert not (path / 'EVE' / 'logs').exists(), 'Refusing child-visible EVE logs'
+print('Child SHGetKnownFolderPath: existing Documents; no EVE logs', flush=True)
+"""
+    subprocess.run([sys.executable, '-c', code], env=env, check=True)
+
+
+def process_diagnostics(target):
+    # Only exact fixture processes; never dump credentials, env or host titles.
+    path = str(target).replace("'", "''")
+    script = f"Get-Process | Where-Object {{$_.Path -eq '{path}'}} | Select-Object Id,MainWindowTitle,Responding | ConvertTo-Json -Compress"
+    return subprocess.check_output(['powershell', '-NoProfile', '-Command', script], text=True).strip()
+
+
 def windows(target):
     # Exact private executable path, never a global process-name selection.
     path = str(target).replace("'", "''")
@@ -101,8 +132,8 @@ def main():
         (stage / ASSET).write_bytes(replacement)
         helper_path = stage / 'update-helper.exe'
         helper_path.write_bytes(old)
-        env = clean_env()
-        env.update(LOCALAPPDATA=str(root), APPDATA=str(root), USERPROFILE=str(root), HOME=str(root), TEMP=str(root), TMP=str(root))
+        env = child_env(root)
+        check_child_documents(env)
         original = subprocess.Popen([str(target)], cwd=root, env=env)
         helper = None
         restarted = []
@@ -127,6 +158,10 @@ def main():
             for name, scope in (('credentials.dpapi', 'combat:write'), ('credentials-v2.dpapi', 'gamelogs:write')):
                 assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
             print(f'OK: published frozen v{OLD_VERSION} pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
+        except Exception:
+            print('Migration failure: original exit=' + str(original.poll()) +
+                  '; fixture processes=' + process_diagnostics(target), flush=True)
+            raise
         finally:
             for pid in windows(target):
                 subprocess.run(['taskkill', '/PID', pid, '/T', '/F'], check=False)
