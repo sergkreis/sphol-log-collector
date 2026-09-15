@@ -107,6 +107,31 @@ class PairingCallbacks(unittest.TestCase):
             self.app.unpair()
         self.assert_cleared()
 
+    def test_pair_failure_preserves_existing_upload_and_credentials(self):
+        old = self.app.uploader = Mock(credentials={'characters': [], 'scope': 'gamelogs:write'})
+        self.app.upload_enabled = True
+        self.app.results.put(('pair', None, OSError('private details')))
+        self.app.network_tick()
+        self.assertIs(self.app.uploader, old)
+        self.assertTrue(self.app.upload_enabled)
+        self.app.store.clear.assert_not_called()
+        self.app.queue.clear.assert_not_called()
+        self.app.queue.acknowledge.assert_not_called()
+
+    def test_auto_resume_only_after_successful_approved_save(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                self.setUp()
+                self.app.resume_after_pair = True
+                self.app.results.put(('token', {'synthetic': True}, None))
+                if failed:
+                    self.app.store.save.side_effect = OSError('synthetic')
+                uploader = Mock(credentials={'scope': 'gamelogs:write'})
+                with patch.object(gui, 'Uploader', return_value=uploader), patch.object(self.app, 'show_identity'), patch.object(self.app, 'start') as start:
+                    self.app.network_tick()
+                self.assertEqual(start.call_count, 0 if failed else 1)
+                self.assertFalse(self.app.resume_after_pair)
+
     def test_clipboard_error_has_no_sensitive_details(self):
         self.ready()
         self.app.window.clipboard_append.side_effect = gui.tk.TclError('secret details')

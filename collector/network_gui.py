@@ -7,6 +7,7 @@ from tkinter import ttk, messagebox
 from .gui import App, tk
 from .credentials import CredentialStore
 from .transport import Pairing, Uploader, PAIR_URI, ORIGIN
+from .pairing_ux import PairingUX, active_url, failure_text
 
 
 class Snapshot:
@@ -20,7 +21,7 @@ class Snapshot:
         self.accepted = list(ids)
 
 
-class ConnectedApp(App):
+class ConnectedApp(PairingUX, App):
     def __init__(self, window, log_root, queue):
         self.results = messages.Queue()
         self.busy = False
@@ -35,6 +36,7 @@ class ConnectedApp(App):
         self.connection_status = ConnectionStatus()
         self.connection_badge = ttk.Label(self.identity_area, text=LABELS['stopped'], wraplength=680)
         self.connection_badge.pack(anchor='w', pady=(4, 0))
+        self.init_pairing_ux()
         self.binding_state = ttk.Label(self.identity_area, text='Привязка ещё не настроена', style='Muted.TLabel')
 
         self.upload_state = ttk.Label(self.network_area, font=('Segoe UI', 10, 'bold'), wraplength=620)
@@ -80,6 +82,7 @@ class ConnectedApp(App):
         window.geometry('780x700')
 
     def refresh_controls(self):
+        self.refresh_pairing_ux()
         if hasattr(self, 'connection_status'):
             from .connection_status import LABELS
             state = self.connection_status.tick(self.uploader.credentials if self.uploader else None, bool(self.tailer))
@@ -137,29 +140,35 @@ class ConnectedApp(App):
         if self.busy:
             return
         self.busy = True
+        attempt = getattr(self, 'pair_attempt', 0) if kind in ('pair', 'token') else None
+        if attempt is not None:
+            self.pair_job = (attempt, time.monotonic() + 20)
         self.refresh_controls()
         def run():
             try:
-                self.results.put((kind, function(), None))
+                self.results.put((kind, function(), None, attempt))
             except Exception as error:
-                self.results.put((kind, None, type(error).__name__))
+                self.results.put((kind, None, error, attempt))
         threading.Thread(target=run, daemon=True).start()
 
     def pair(self):
         if self.busy or self.pairing:
             return
         if self.queue.count() and not self.uploader:
-            messagebox.showwarning('Есть очередь', 'Перед новой привязкой удалите очередь, чтобы исключить передачу данных другому аккаунту.')
+            self.resume_after_pair = False
+            self.pairing_notice('Есть непривязанная очередь. Она сохранена; новая привязка остановлена для защиты данных. Обратитесь в поддержку — не удаляйте очередь для повтора.')
             return
         if not messagebox.askyesno('Привязать персонажа?', 'Открыть sphol.com для подтверждения персонажа? После привязки «Начать сбор» автоматически отправляет его новые боевые события и сохранённую очередь на sphol.com. Остановка прекращает сбор и новые запросы. Пароль здесь не вводится.'):
+            self.resume_after_pair = False
             return
+        self.pair_attempt = getattr(self, 'pair_attempt', 0) + 1
         self.pairing = Pairing(scope='gamelogs:write', browser=True, credentials=self.uploader.credentials if self.uploader else None)
-        self.connection.config(text='Открываем подтверждение в браузере…')
+        self.pairing_notice('Получаем ссылку подтверждения от SPHOL… Это может занять до 20 секунд. Сбор ещё не начат.')
         self.work('pair', self.pairing.start)
 
     def start(self):
-        if self.pairing and getattr(self.pairing, 'browser_uri', None):
-            webbrowser.open(self.pairing.browser_uri)
+        if active_url(self.pairing):
+            self.open_pairing_browser()
             return
         if self.busy or self.pairing:
             return
@@ -183,6 +192,7 @@ class ConnectedApp(App):
         self.refresh_controls()
 
     def stop(self):
+        self.resume_after_pair = False
         self.upload_enabled = False
         if getattr(self, 'legacy', None):
             self.legacy.stop()
@@ -234,13 +244,23 @@ class ConnectedApp(App):
         self.refresh_controls()
 
     def network_tick(self):
+        self.poll_browser()
         try:
-            kind, result, error = self.results.get_nowait()
+            item = self.results.get_nowait()
+            kind, result, error = item[:3]
+            stale = len(item) == 4 and item[3] is not None and item[3] != getattr(self, 'pair_attempt', 0)
         except messages.Empty:
             pass
         else:
+            if stale:
+                self.window.after(250, self.network_tick)
+                return
             self.busy = False
-            if error:
+            if kind in ('pair', 'token'):
+                self.pair_job = None
+            if error and kind in ('pair', 'token'):
+                self.pairing_failed(failure_text(error))
+            elif error:
                 self.upload_problem = True
                 self.upload_enabled = False
                 self.pairing = None
@@ -248,8 +268,11 @@ class ConnectedApp(App):
                 self.connection.config(text='Запрос не выполнен. Очередь сохранена; успех не подтверждён. Проверьте сеть и срок привязки.')
             elif kind == 'pair':
                 if getattr(self.pairing, 'browser', False):
-                    self.connection.config(text='Подтвердите сбор боевых событий и трёх безопасных наблюдений в браузере.')
-                    webbrowser.open(PAIR_URI + '#' + result)
+                    if active_url(self.pairing):
+                        self.pairing_notice('Ссылка готова. Подтвердите сбор боевых событий и трёх безопасных наблюдений в браузере.')
+                        self.open_pairing_browser()
+                    else:
+                        self.pairing_failed('Ссылка подтверждения недействительна или истекла. Нажмите «Повторить привязку».')
                 else:  # Legacy protocol compatibility; new Start never selects this path.
                     self.pairing_code.set(result)
                     self.code_frame.pack(anchor='w', pady=8)
@@ -258,17 +281,22 @@ class ConnectedApp(App):
                     webbrowser.open(PAIR_URI)
             elif kind == 'token' and result:
                 self.clear_pairing_code()
+                saved = False
                 try:
                     self.store.save(result)
                     self.uploader = Uploader(result)
                     self.upload_enabled = bool(self.tailer)
                     self.show_identity()
+                    saved = True
                 except Exception:
-                    self.connection.config(text='Не удалось безопасно сохранить привязку Windows. Отправка недоступна.')
+                    self.pairing_notice('Не удалось безопасно сохранить привязку Windows. Сбор не начат. Повторите привязку; при повторной ошибке обратитесь в поддержку.')
                 self.pairing = None
-                if getattr(self, 'resume_after_pair', False) and self.uploader and self.uploader.credentials['scope'] == 'gamelogs:write':
+                if saved and hasattr(self, 'pairing_panel'):
+                    self.pairing_panel.pack_forget()
+                if saved and getattr(self, 'resume_after_pair', False) and self.uploader and self.uploader.credentials['scope'] == 'gamelogs:write':
                     self.resume_after_pair = False
                     self.start()
+                self.resume_after_pair = False
             elif kind == 'upload':
                 snapshot, status = result
                 self.queue.acknowledge(snapshot.accepted)
@@ -281,6 +309,12 @@ class ConnectedApp(App):
                     self.upload_enabled = False
                 if status:
                     self.connection.config(text=status)
+        if getattr(self, 'pair_job', None) and time.monotonic() >= self.pair_job[1]:
+            self.busy = False
+            self.pairing_failed('SPHOL не ответил вовремя. Очередь и привязка сохранены. Нажмите «Повторить привязку».')
+        if self.pairing and self.pairing.deadline and time.monotonic() >= self.pairing.deadline:
+            self.busy = False
+            self.pairing_failed('Время подтверждения истекло. Сбор не начат; очередь сохранена. Нажмите «Повторить привязку».')
         if self.pairing_code.get() and (not self.pairing or time.monotonic() >= self.pairing.deadline):
             self.clear_pairing_code()
         if not self.busy:
