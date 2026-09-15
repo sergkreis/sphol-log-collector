@@ -62,7 +62,7 @@ class PairingUX:
         valid = active_url(self.pairing)
         self.browser_button.config(state='normal' if valid and not self.browser_job else 'disabled')
         self.link_button.config(state='normal' if valid else 'disabled')
-        self.retry_button.config(state='disabled' if self.busy or self.pairing else 'normal')
+        self.retry_button.config(state='disabled' if self.busy or self.pairing or getattr(self, 'redemption_uncertain', False) else 'normal')
 
     def copy_pairing_link(self):
         url = active_url(self.pairing)
@@ -118,5 +118,9 @@ class PairingUX:
         self.pairing_notice(text)
 
     def retry_pairing(self):
-        if not self.busy and not self.pairing:
+        if getattr(self, 'recovered_token', None) and not self.busy:
+            self.results.put(('token', self.recovered_token, None, self.pair_attempt))
+            self.busy = True
+            return
+        if not self.busy and not self.pairing and not getattr(self, 'redemption_uncertain', False):
             self.start()

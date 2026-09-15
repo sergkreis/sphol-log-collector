@@ -15,6 +15,54 @@ from collector.transport import PAIR_URI
 
 @unittest.skipUnless(os.environ.get('DISPLAY') or os.name == 'nt', 'native display required')
 class RecoveryTk(unittest.TestCase):
+    def test_late_redemption_waits_and_requires_explicit_resume(self):
+        import threading
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(socket.socket, 'connect', side_effect=AssertionError('offline only')), \
+                patch('collector.network_gui.CredentialStore.load', return_value=None), \
+                patch('collector.connection_status.probe', return_value=None):
+            root = Path(temp)
+            logs = root / 'Gamelogs'
+            logs.mkdir()
+            q = PendingQueue(root / 'pending.sqlite3')
+            w = tk.Tk()
+            release = threading.Event()
+            with patch.object(w, 'after'):
+                app = ConnectedApp(w, logs, q)
+                try:
+                    token = dict(access_token='A'*43, token_type='Bearer', scope='gamelogs:write',
+                                 installation_id='fixture-late', expires_at='2099-01-01T00:00:00Z',
+                                 characters=[{'id': 42, 'name': 'Test Pilot'}])
+                    app.pairing = types.SimpleNamespace(deadline=time.monotonic()+60, browser=False)
+                    app.resume_after_pair = True
+                    app.work('token', lambda: (release.wait(3), token)[1])
+                    app.pair_job = (app.pair_attempt, 0)
+                    app.network_tick()
+                    self.assertTrue(app.retry_button.instate(['disabled']))
+                    self.assertTrue(app.unpair_button.instate(['disabled']))
+                    self.assertIn('ждём результат', app.pairing_message.cget('text'))
+                    self.assertFalse(app.close())
+                    self.assertTrue(w.winfo_exists())
+                    release.set()
+                    deadline = time.monotonic()+3
+                    while app.results.empty() and time.monotonic() < deadline:
+                        time.sleep(.01)
+                    with patch.object(app.store, 'save') as save, patch.object(app, 'start') as start:
+                        app.network_tick()
+                        save.assert_called_once_with(token)
+                        start.assert_not_called()
+                    self.assertIsNone(app.tailer)
+                    self.assertFalse(app.upload_enabled)
+                    self.assertFalse(app.busy)
+                    self.assertEqual(app.identity.cget('text'), 'Test Pilot')
+                finally:
+                    release.set()
+                    app.expanded.close()
+                    app.legacy.close()
+                    q.close()
+                    w.destroy()
+
     def test_visible_retry_consent_expiry_stale_and_copy(self):
         with tempfile.TemporaryDirectory() as temp, \
                 patch.object(socket.socket, 'connect', side_effect=AssertionError('offline only')), \

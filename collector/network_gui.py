@@ -95,7 +95,7 @@ class ConnectedApp(PairingUX, App):
             else:
                 self.pair_button.pack_forget()
 
-        self.unpair_button.config(state='disabled' if self.busy else 'normal')
+        self.unpair_button.config(state='disabled' if self.busy or getattr(self, 'recovered_token', None) else 'normal')
         self.upload_state.config(text='Отправка включена — только для привязанного персонажа' if self.upload_enabled else 'Отправка выключена — данные остаются на компьютере')
         if self.upload_enabled and getattr(self.uploader, 'failures', 0):
             self.upload_state.config(text='Сеть недоступна · очередь сохранена, повтор автоматически')
@@ -141,6 +141,9 @@ class ConnectedApp(PairingUX, App):
             return
         self.busy = True
         attempt = getattr(self, 'pair_attempt', 0) if kind in ('pair', 'token') else None
+        if kind == 'token':
+            # Redemption is irreversible: keep this worker authoritative until it ends.
+            self.redemption_pending = True
         if attempt is not None:
             self.pair_job = (attempt, time.monotonic() + 20)
         self.refresh_controls()
@@ -152,7 +155,7 @@ class ConnectedApp(PairingUX, App):
         threading.Thread(target=run, daemon=True).start()
 
     def pair(self):
-        if self.busy or self.pairing:
+        if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
             return
         if self.queue.count() and not self.uploader:
             self.resume_after_pair = False
@@ -170,7 +173,7 @@ class ConnectedApp(PairingUX, App):
         if active_url(self.pairing):
             self.open_pairing_browser()
             return
-        if self.busy or self.pairing:
+        if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
             return
         if not self.uploader or self.uploader.credentials['scope'] != 'gamelogs:write':
             self.resume_after_pair = True
@@ -210,18 +213,24 @@ class ConnectedApp(PairingUX, App):
         super().clear()
 
     def close(self):
+        if getattr(self, 'redemption_pending', False) or getattr(self, 'recovered_token', None):
+            self.stop()
+            self.pairing_notice('Сбор остановлен. Дождитесь сохранения ответа SPHOL перед выходом, чтобы не потерять привязку. Если сохранение не удалось — нажмите «Повторить привязку»: повторится только сохранение.')
+            return False
         expanded = getattr(self, 'expanded', None)
         legacy = getattr(self, 'legacy', None)
         if ((expanded and expanded.queue.count()) or (legacy and legacy.queue.count())) and not messagebox.askyesno('Есть очередь наблюдений', 'Сохранить неотправленные наблюдения и выйти? Фонового процесса не останется.'):
             return
         # Base close may be cancelled by the independent legacy queue warning.
-        if super().close() and expanded:
+        closed = super().close()
+        if closed and expanded:
             expanded.close()
             if legacy:
                 legacy.close()
+        return closed
 
     def unpair(self):
-        if self.busy or (getattr(self, 'expanded', None) and self.expanded.busy):
+        if self.busy or getattr(self, 'recovered_token', None) or (getattr(self, 'expanded', None) and self.expanded.busy):
             return
         if not messagebox.askyesno('Удалить привязку?', 'Удалить текущий локальный ключ и текущую очередь событий? Прежняя привязка наблюдений и её очередь сохранятся. Отозвать доступ устройства на сайте нужно отдельно.'):
             return
@@ -243,6 +252,11 @@ class ConnectedApp(PairingUX, App):
         self.connection.config(text='Локальная привязка удалена. Отзыв доступа на сайте выполняется отдельно.')
         self.refresh_controls()
 
+    def wait_for_redemption(self):
+        self.stop()
+        self.pair_job = None
+        self.pairing_notice('SPHOL отвечает дольше обычного. Сбор остановлен; ждём результат выдачи ключа. Повтор и выход временно заблокированы, чтобы не потерять привязку. После сохранения нажмите «Начать сбор».')
+
     def network_tick(self):
         self.poll_browser()
         try:
@@ -255,11 +269,20 @@ class ConnectedApp(PairingUX, App):
             if stale:
                 self.window.after(250, self.network_tick)
                 return
+            if (kind == 'token' and getattr(self, 'pair_job', None)
+                    and time.monotonic() >= self.pair_job[1]):
+                self.wait_for_redemption()
             self.busy = False
             if kind in ('pair', 'token'):
                 self.pair_job = None
+            if kind == 'token':
+                self.redemption_pending = False
             if error and kind in ('pair', 'token'):
                 self.pairing_failed(failure_text(error))
+                if kind == 'token':
+                    self.redemption_uncertain = True
+                    self.stop()
+                    self.pairing_notice('Ответ о привязке не получен. SPHOL мог уже выдать ключ. Новая привязка заблокирована: проверьте устройства на сайте и обратитесь в поддержку. Очередь сохранена; можно закрыть приложение.')
             elif error:
                 self.upload_problem = True
                 self.upload_enabled = False
@@ -282,14 +305,18 @@ class ConnectedApp(PairingUX, App):
             elif kind == 'token' and result:
                 self.clear_pairing_code()
                 saved = False
+                self.recovered_token = result
                 try:
                     self.store.save(result)
                     self.uploader = Uploader(result)
                     self.upload_enabled = bool(self.tailer)
                     self.show_identity()
                     saved = True
+                    self.recovered_token = None
                 except Exception:
-                    self.pairing_notice('Не удалось безопасно сохранить привязку Windows. Сбор не начат. Повторите привязку; при повторной ошибке обратитесь в поддержку.')
+                    self.resume_after_pair = False
+                    self.upload_enabled = False
+                    self.pairing_notice('Не удалось безопасно сохранить ключ Windows. Не закрывайте приложение. «Повторить привязку» повторит только сохранение полученного ключа, без нового устройства. Сбор не начат.')
                 self.pairing = None
                 if saved and hasattr(self, 'pairing_panel'):
                     self.pairing_panel.pack_forget()
@@ -309,10 +336,16 @@ class ConnectedApp(PairingUX, App):
                     self.upload_enabled = False
                 if status:
                     self.connection.config(text=status)
+        if (getattr(self, 'redemption_pending', False) and self.pairing
+                and self.pairing.deadline and time.monotonic() >= self.pairing.deadline):
+            self.wait_for_redemption()
         if getattr(self, 'pair_job', None) and time.monotonic() >= self.pair_job[1]:
-            self.busy = False
-            self.pairing_failed('SPHOL не ответил вовремя. Очередь и привязка сохранены. Нажмите «Повторить привязку».')
-        if self.pairing and self.pairing.deadline and time.monotonic() >= self.pairing.deadline:
+            if getattr(self, 'redemption_pending', False):
+                self.wait_for_redemption()
+            else:
+                self.busy = False
+                self.pairing_failed('SPHOL не ответил вовремя. Очередь и привязка сохранены. Нажмите «Повторить привязку».')
+        if self.pairing and self.pairing.deadline and time.monotonic() >= self.pairing.deadline and not getattr(self, 'redemption_pending', False):
             self.busy = False
             self.pairing_failed('Время подтверждения истекло. Сбор не начат; очередь сохранена. Нажмите «Повторить привязку».')
         if self.pairing_code.get() and (not self.pairing or time.monotonic() >= self.pairing.deadline):
