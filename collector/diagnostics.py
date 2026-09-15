@@ -61,8 +61,13 @@ def exception_fields(exc):
     category = 'internal'
     number = getattr(exc, 'errno', None)
     winerror = getattr(exc, 'winerror', None)
+    # Native file APIs can supply winerror without a useful POSIX errno.
+    # Use only numeric codes, never localized messages or private filenames.
+    native = {2: 'missing', 3: 'missing', 5: 'permission',
+              32: 'sharing_violation', 33: 'sharing_violation',
+              39: 'disk_full', 112: 'disk_full', 267: 'not_directory'}
     if isinstance(exc, TimeoutError): category = 'timeout'
-    elif winerror in (32, 33): category = 'sharing_violation'
+    elif type(winerror) is int and winerror in native: category = native[winerror]
     elif number in (errno.EACCES, errno.EPERM): category = 'permission'
     elif number == errno.ENOENT: category = 'missing'
     elif number == errno.ENOTDIR: category = 'not_directory'
@@ -187,8 +192,9 @@ class Diagnostics:
                         if count >= 513: break
             self.record('gamelogs.inspect', exists=1, accessible=1, count=count)
         except Exception as exc:
-            self.record('gamelogs.inspect', 'error', exists=0 if isinstance(exc, FileNotFoundError) else 1,
-                        accessible=0, **exception_fields(exc))
+            fields = exception_fields(exc)
+            self.record('gamelogs.inspect', 'error', exists=0 if fields['error'] == 'missing' else 1,
+                        accessible=0, **fields)
 
     def export(self, target):
         target = Path(target).absolute()

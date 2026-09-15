@@ -195,9 +195,52 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertEqual([event['event'] for event in history.events], ['app.start', 'app.init'])
         self.assertEqual(history.events[-1]['outcome'], 'error')
 
-    def test_gamelogs_and_classifications(self):
+    def test_native_error_codes_without_posix_mapping(self):
+        for code, category in ((2, 'missing'), (3, 'missing'), (5, 'permission'),
+                               (32, 'sharing_violation'), (33, 'sharing_violation'),
+                               (39, 'disk_full'), (112, 'disk_full'),
+                               (267, 'not_directory'), (123, 'os_error'),
+                               (9999, 'os_error')):
+            with self.subTest(winerror=code):
+                # Set explicitly: Linux ignores the OSError winerror constructor arg.
+                exc = OSError(SECRET)
+                exc.winerror = code
+                self.assertIsNone(exc.errno)
+                with patch('collector.diagnostics.os.scandir', side_effect=exc):
+                    self.sink.inspect_logs(self.root)
+                event = self.sink.events[-1]
+                self.assertEqual(event['error'], category)
+                self.assertEqual(event['winerror'], code)
+                self.assertEqual(event['exists'], int(category != 'missing'))
+                self.assertEqual(event['accessible'], 0)
+        self.report()
+        self.assertNotIn(SECRET, self.sink.path.read_text())
+
+    def test_native_missing_path_apis(self):
+        missing = self.root / 'Synthetic Private Pilot' / 'Gamelogs'
+        for operation in (lambda: missing.resolve(strict=True), lambda: missing.stat(),
+                          lambda: os.scandir(missing)):
+            with self.subTest(operation=operation):
+                with self.assertRaises(OSError) as caught:
+                    operation()
+                self.assertEqual(d.exception_fields(caught.exception)['error'], 'missing')
+                d.emit('logs.paths', 'error', error=caught.exception)
+        self.report()
+
+    @unittest.skipUnless(os.name == 'nt', 'Native Windows invalid-name distinction')
+    def test_native_invalid_name_is_not_missing(self):
+        # The original fixture contained colons/backslashes from SECRET, which
+        # is invalid Windows syntax, not evidence of a missing directory.
         self.sink.inspect_logs(self.root / SECRET.replace('/', '_'))
+        self.assertEqual(self.sink.events[-1]['winerror'], 123)
+        self.assertEqual(self.sink.events[-1]['error'], 'os_error')
+        self.report()
+
+    def test_gamelogs_and_classifications(self):
+        # A valid private filename on both platforms; retain strict classification.
+        self.sink.inspect_logs(self.root / 'Synthetic Private Pilot Gamelogs')
         self.assertEqual(self.sink.events[-1]['error'], 'missing')
+        self.assertEqual(self.sink.events[-1]['exists'], 0)
         with patch('collector.diagnostics.os.scandir', side_effect=PermissionError(errno.EACCES, SECRET)):
             self.sink.inspect_logs(self.root)
         self.assertEqual(self.sink.events[-1]['error'], 'permission')
