@@ -268,19 +268,23 @@ class App:
 
 def main():
     window = tk.Tk()
+    diagnostics_ready = False
     try:
+        from .updater import instance_lock
+        # Reject duplicates before loading or writing the owner's shared history.
+        instance = instance_lock(Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector')
         try:
             initialize(Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector')
+            diagnostics_ready = True
         except Exception:
             pass
-        from .updater import instance_lock
-        instance = instance_lock(Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector')
         root = documents() / 'EVE' / 'logs' / 'Gamelogs'
         state = Path(os.environ['LOCALAPPDATA']) / 'SPHOLLogCollector' / 'pending.sqlite3'
         from .network_gui import ConnectedApp
         ConnectedApp(window, root, PendingQueue(state))
     except Exception as exc:
-        emit('app.init', 'error', error=exc)
+        if diagnostics_ready:
+            emit('app.init', 'error', error=exc)
         messagebox.showerror('Не удалось открыть сборщик', 'Проверьте доступ к папке журналов и локальному хранилищу.')
         window.destroy()
         return

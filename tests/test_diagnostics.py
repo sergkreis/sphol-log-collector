@@ -125,6 +125,76 @@ class DiagnosticsTests(unittest.TestCase):
         self.sink.events.append({'time': 1, 'event': 'app.start', 'path': SECRET})
         self.assertEqual(self.report()['events'], [{'time': 1, 'event': 'app.start'}])
 
+    def test_duplicate_main_preserves_running_instance_ack(self):
+        from collector import gui
+        state = self.root / 'SPHOLLogCollector'
+        running = d.Diagnostics(state / 'diagnostics')
+        running.record('app.start')
+        before = None
+
+        def reject_duplicate(path):
+            nonlocal before
+            self.assertEqual(path, state)
+            # The owner writes after the duplicate could have loaded a stale snapshot.
+            running.record('upload.ack', accepted=7)
+            before = running.path.read_bytes()
+            raise RuntimeError('Collector already running')
+
+        with patch.dict(os.environ, LOCALAPPDATA=str(self.root)), \
+                patch.object(gui.tk, 'Tk') as tk, \
+                patch.object(gui.messagebox, 'showerror') as dialog, \
+                patch.object(gui, 'initialize', wraps=d.initialize) as initialize, \
+                patch.object(gui, 'emit', wraps=d.emit) as emit, \
+                patch('collector.updater.instance_lock', side_effect=reject_duplicate):
+            gui.main()
+            self.assertEqual(running.path.read_bytes(), before)
+            self.assertEqual(d.Diagnostics(running.directory).events[-1]['accepted'], 7)
+            initialize.assert_not_called()
+            emit.assert_not_called()
+            dialog.assert_called_once()
+            tk.return_value.destroy.assert_called_once()
+            tk.return_value.mainloop.assert_not_called()
+
+    def test_main_initialization_failure_does_not_use_stale_sink(self):
+        from collector import gui
+        self.sink.record('upload.ack', accepted=3)
+        before = self.sink.path.read_bytes()
+        with patch.dict(os.environ, LOCALAPPDATA=str(self.root)), \
+                patch.object(gui.tk, 'Tk') as tk, \
+                patch.object(gui.messagebox, 'showerror') as dialog, \
+                patch('collector.updater.instance_lock', return_value=object()), \
+                patch.object(gui, 'initialize', side_effect=OSError('unavailable')), \
+                patch.object(gui, 'documents', side_effect=OSError('unavailable')), \
+                patch.object(gui, 'emit', wraps=d.emit) as emit:
+            gui.main()
+            emit.assert_not_called()
+            self.assertEqual(self.sink.path.read_bytes(), before)
+            dialog.assert_called_once()
+            tk.return_value.destroy.assert_called_once()
+
+    def test_main_owned_startup_failure_is_recorded(self):
+        from collector import gui
+        order = []
+
+        def acquire(path):
+            order.append('lock')
+            return object()
+
+        def initialize(path):
+            self.assertEqual(order, ['lock'])
+            return d.initialize(path)
+
+        with patch.dict(os.environ, LOCALAPPDATA=str(self.root)), \
+                patch.object(gui.tk, 'Tk'), \
+                patch.object(gui.messagebox, 'showerror'), \
+                patch('collector.updater.instance_lock', side_effect=acquire), \
+                patch.object(gui, 'initialize', side_effect=initialize), \
+                patch.object(gui, 'documents', side_effect=PermissionError('unavailable')):
+            gui.main()
+        history = d.Diagnostics(self.root / 'SPHOLLogCollector' / 'diagnostics')
+        self.assertEqual([event['event'] for event in history.events], ['app.start', 'app.init'])
+        self.assertEqual(history.events[-1]['outcome'], 'error')
+
     def test_gamelogs_and_classifications(self):
         self.sink.inspect_logs(self.root / SECRET.replace('/', '_'))
         self.assertEqual(self.sink.events[-1]['error'], 'missing')
