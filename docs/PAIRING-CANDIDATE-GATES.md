@@ -1,6 +1,6 @@
 # Pairing recovery candidate gates
 
-Candidate version: 0.3.3. Scoped candidate-branch publication and manual Windows CI are authorized; stable GitHub release and server deployment are not.
+Candidate version: 0.3.5. This document describes candidate validation only; stable release selection/publication and server deployment are separate parent-owned steps.
 
 ## Offline source gates
 
@@ -19,13 +19,13 @@ Pillow is absent from the existing Windows dependency lock. Optional screenshot 
 
 ## Previous release and isolation
 
-The latest published release was queried live and its actual v0.3.2 EXE downloaded. SHA256SUMS.txt, update-manifest.json and calculated EXE SHA agree:
+The current stable upgrade fixture uses the actual published v0.3.4 EXE. Its asset API digest, SHA256SUMS.txt, update-manifest.json and calculated EXE SHA were reconciled:
 
-`4f3297f1bbdc8b7ca0cd09875935ba1d5bb87385c25512428d6c9cdf768b6c8e`
+`5185c8a9247f1324018e99cb9cf509a992b24de1332f1d5199a9a1ee31d2080b`
 
-The migration fixture derives its URL and report label from `OLD_VERSION = '0.3.2'` and checks this digest before execution. It requires a disposable GitHub Windows runner, refuses existing Documents/EVE/logs, uses temporary synthetic LOCALAPPDATA/APPDATA/profile/temp directories, and checks enabled firewall profiles plus explicit outbound-block rules for both executable paths before launching any old/helper/new child. The new executable replaces the same blocked target path. Setup/download traffic remains available to the runner, not these collector processes. Rules are removed in fixture cleanup after child termination.
+The migration fixture derives its URL and report label from `OLD_VERSION = '0.3.4'` and checks this digest before execution. It requires a disposable GitHub Windows runner, refuses existing Documents/EVE/logs, uses temporary synthetic LOCALAPPDATA/APPDATA/profile/temp directories, and checks enabled firewall profiles plus explicit outbound-block rules for both executable paths before launching any old/helper/new child. The new executable replaces the same blocked target path. Setup/download traffic remains available to the runner, not these collector processes. Rules are removed in fixture cleanup after child termination.
 
-Migration proves actual replacement/relaunch, unchanged seeded queue/credential bytes and native DPAPI decryptability before/after. It forces the old parent to exit, so it does not prove the normal user-confirmed updater dialog or identity shown by both ordinary EXEs. The separate frozen updater fixture exercises the confirmation path against isolated dummies.
+Migration requires actual replacement/relaunch, unchanged pending IDs/payload/size seeded with the released queue implementation, additive schema and SQLite integrity, old-reader rollback compatibility, unchanged credential bytes and native DPAPI decryptability before/after. Whole SQLite file bytes may change during additive migration. It forces the old parent to exit, so it does not prove the normal user-confirmed updater dialog or identity shown by both ordinary EXEs. The separate frozen updater fixture exercises the confirmation path against isolated dummies.
 
 ## Migration startup regression
 
