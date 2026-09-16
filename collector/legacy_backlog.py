@@ -54,14 +54,23 @@ class LegacyBacklog:
                 self.problem = True
                 self.enabled = False
             else:
-                self.queue.acknowledge(snapshot.accepted)
+                try:
+                    self.queue.complete_upload(snapshot.accepted, snapshot.retry_updates)
+                except Exception:
+                    self.problem = True
+                    self.enabled = False
+                    snapshot.accepted = []
+                else:
+                    if snapshot.accepted:
+                        from .diagnostics import emit
+                        emit('upload.ack', accepted=len(snapshot.accepted), rejected=0)
                 if snapshot.accepted:
                     self.ack_count += len(snapshot.accepted)
                     self.problem = False
         if self.enabled and not self.busy and self.uploader and not self.uploader.paused and time.monotonic() >= self.uploader.next_try:
             from .network_gui import Snapshot
-            snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}))
-            if snapshot.events:
+            snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}), self.queue)
+            if snapshot.events and self.uploader.ready(snapshot):
                 self.busy = True
                 uploader = self.uploader
                 def run():

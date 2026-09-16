@@ -85,6 +85,7 @@ class TransportTests(unittest.TestCase):
     def test_retry_and_revocation(self):
         q = Mock()
         q.batch.return_value = [event()]
+        q.retry_states.return_value = {}
         for error in (OSError(), t.HTTPFailure(429, 300), t.HTTPFailure(503)):
             http = Mock()
             http.post.side_effect = error

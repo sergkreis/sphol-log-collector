@@ -214,6 +214,8 @@ class App:
     def stop(self):
         emit('capture.stop')
         self.stop_local()
+        if self.tailer:
+            self.tailer.stop()
         self.tailer = None
         self.status.set('Сбор выключен — очередь сохранена на компьютере.')
         self.capture_controls()
@@ -243,6 +245,7 @@ class App:
                 self.status.set('Сбор приостановлен: очередь заполнена. Эти данные ещё не отправлены.')
             except Exception as exc:
                 emit('capture.poll', 'error', error=exc)
+                self.tailer = None  # Preserve durable recovery envelope on faults.
                 self.stop()
                 self.status.set('Сбор выключен после ошибки чтения. Сохраните отчёт для поддержки; очередь сохранена.')
         self.pending.set(f'В очереди на компьютере: {self.queue.count()} событий')
@@ -259,6 +262,8 @@ class App:
         if self.queue.count() and not messagebox.askyesno('Есть неотправленные события', 'Сохранить очередь на диске и выйти? Эти события ещё не отправлены. Фоновый процесс не останется.'):
             return False
         self.stop_local()
+        if self.tailer:
+            self.tailer.stop()
         self.tailer = None
         emit('app.close')
         self.queue.close()

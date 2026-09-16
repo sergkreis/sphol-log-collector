@@ -2,6 +2,7 @@
 import base64
 from datetime import datetime, timezone
 import hashlib
+from email.utils import parsedate_to_datetime
 import http.client
 import json
 import random
@@ -9,11 +10,15 @@ import re
 import secrets
 import ssl
 import time
+import threading
+import weakref
 from .diagnostics import emit, observed
 
 ORIGIN = 'https://sphol.com'
 PAIR_URI = ORIGIN + '/collector/pair'
 MAX_BODY = 262144
+_INSTALLATION_LOCKS = weakref.WeakValueDictionary()
+_LOCKS_GUARD = threading.Lock()
 
 
 class ProtocolError(Exception):
@@ -21,7 +26,7 @@ class ProtocolError(Exception):
 
 
 class HTTPFailure(ProtocolError):
-    def __init__(self, status, retry_after=0):
+    def __init__(self, status, retry_after=0.0):
         super().__init__(f'Server HTTP {status}; pending events retained')
         self.status, self.retry_after = status, retry_after
 
@@ -43,6 +48,19 @@ def decode(raw):
                           parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
     except (UnicodeError, ValueError, TypeError):
         raise ProtocolError('Invalid server JSON') from None
+
+
+def retry_after(value, now=None):
+    """Honor delta seconds or HTTP-date; malformed values use local backoff."""
+    try:
+        if value.isdigit() and len(value) <= 10:
+            return min(86400, int(value))
+        when = parsedate_to_datetime(value)
+        if when.tzinfo is None:
+            return 0
+        return min(86400, max(0, when.timestamp() - (time.time() if now is None else now)))
+    except (ValueError, TypeError, OverflowError):
+        return 0
 
 
 class HTTPS:
@@ -68,7 +86,7 @@ class HTTPS:
             status = response.status
             if status not in (200, 201, 400):
                 retry = response.getheader('Retry-After', '')
-                raise HTTPFailure(status, min(300, max(1, int(retry))) if retry.isdigit() and len(retry) < 10 else 0)
+                raise HTTPFailure(status, retry_after(retry))
             if response.getheader('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
                 raise ProtocolError('Expected JSON response')
             return status, decode(raw)
@@ -170,12 +188,12 @@ class Pairing:
         return result
 
 
-def build_batch(queue, credentials):
+def build_batch(queue, credentials, count_limit=100, byte_limit=MAX_BODY):
     expanded = credentials['scope'] == 'gamelogs:write'
     schema = 2 if expanded else 1
     names = {c['name'] for c in credentials['characters']}
     events = []
-    for event in queue.batch(100):
+    for event in queue.batch(count_limit):
         if event.get('listener') not in names:
             continue
         if not isinstance(event.get('id'), str) or not re.fullmatch('[0-9a-f]{64}', event['id']):
@@ -196,9 +214,9 @@ def build_batch(queue, credentials):
                 raise ProtocolError('Unsafe legacy expanded record retained locally; not uploaded')
         expiry(event['time'])  # Strict UTC format, without treating old events as credential expiry.
         candidate = {'schema': schema, 'events': events + [event]}
-        if len(encode(candidate)) > MAX_BODY:
+        if len(encode(candidate)) > byte_limit:
             if not events:
-                raise ProtocolError('Oversized pending event; delete pending to recover')
+                raise ProtocolError('Oversized pending event retained locally; sending paused')
             break
         events.append(event)
     return {'schema': schema, 'events': events}
@@ -218,31 +236,81 @@ def validate_ack(data, events):
 
 
 class Uploader:
-    def __init__(self, credentials, http=None):
+    def __init__(self, credentials, http=None, *, interval=7.5, count_limit=100,
+                 byte_limit=MAX_BODY, clock=None, jitter=None, wall_clock=None):
+        if not 5 <= interval <= 10 or not 1 <= count_limit <= 100 or not 16384 <= byte_limit <= MAX_BODY:
+            raise ValueError('Invalid batching limits')
+        self.interval, self.count_limit, self.byte_limit = interval, count_limit, byte_limit
+        self.clock = clock or time.monotonic
+        self.wall_clock = wall_clock or time.time
+        self._retry_loaded = False
+        self.retry_until = 0.0
+        self.jitter = jitter or random.random
+        self.flush_at = None
         self.credentials = validate_credentials(credentials)
         self.http = http or HTTPS()
+        with _LOCKS_GUARD:
+            self.request_lock = _INSTALLATION_LOCKS.setdefault(
+                self.credentials['installation_id'], threading.Lock())
         self.next_try = 0
         self.failures = 0
         self.paused = False
 
+    def restore_retry(self, queue):
+        if self._retry_loaded or not hasattr(queue, 'retry_states'):
+            return
+        self.retry_key = self.credentials['installation_id'] + ':' + self.credentials['scope']
+        state = queue.retry_states().get(self.retry_key)
+        if state:
+            self.failures = min(9, max(0, int(state[0])))
+            remaining = min(86405, max(0, state[1] - self.wall_clock()))
+            self.next_try = self.clock() + remaining
+            self.retry_until = self.wall_clock() + remaining
+        self._retry_loaded = True
+
+    def ready(self, queue):
+        """Main-thread dispatch gate; never sleeps or performs network I/O."""
+        self.restore_retry(queue)
+        now = self.clock()
+        if self.paused or now < self.next_try:
+            return False
+        events = queue.batch(self.count_limit)
+        if not events:
+            self.flush_at = None
+            return False
+        if self.flush_at is None:
+            # Random initial phase avoids synchronized fleet starts.
+            self.flush_at = now + 5 + (self.interval - 5) * self.jitter()
+        size = len(encode({'schema': 2 if self.credentials['scope'] == 'gamelogs:write' else 1, 'events': events}))
+        return len(events) >= self.count_limit or size >= self.byte_limit or now >= self.flush_at
+
     @observed('upload.send', successes=False)
     def upload(self, queue):
-        if self.paused or time.monotonic() < self.next_try:
+        self.restore_retry(queue)
+        if self.paused or self.clock() < self.next_try:
             return None
         try:
             validate_credentials(self.credentials)
-            payload = build_batch(queue, self.credentials)
+            payload = build_batch(queue, self.credentials, self.count_limit, self.byte_limit)
             if not payload['events']:
                 return 'Нет событий привязанного персонажа; остальные остаются в очереди.'
             emit('upload.send', 'start', count=len(payload['events']))
-            status, data = self.http.post('/api/collector/v1/events', payload, self.credentials['access_token'])
+            if not self.request_lock.acquire(blocking=False):
+                return None  # Another consented stream for this installation is in flight.
+            try:
+                status, data = self.http.post('/api/collector/v1/events', payload, self.credentials['access_token'])
+            finally:
+                self.request_lock.release()
             emit('http.response', status=status)
             if status != 200:
                 raise HTTPFailure(status)
             accepted, rejected = validate_ack(data, payload['events'])
             queue.acknowledge(accepted)
+            self.flush_at = None
             self.failures = 0
-            emit('upload.ack', accepted=len(accepted), rejected=len(rejected))
+            self.next_try = self.retry_until = 0
+            if getattr(queue, 'durable', True):
+                emit('upload.ack', accepted=len(accepted), rejected=len(rejected))
             if rejected:
                 self.paused = True
                 return f'Сервер отклонил события: {len(rejected)}. Они сохранены; отправка приостановлена.'
@@ -252,12 +320,17 @@ class Uploader:
                 self.paused = True
                 raise
             self.failures = min(9, self.failures + 1)
-            delay = min(300, 2 ** self.failures + random.random())
+            ceiling = min(300, 2 ** self.failures)
+            delay = ceiling / 2 + self.jitter() * ceiling / 2
             if isinstance(error, HTTPFailure):
-                delay = max(delay, error.retry_after)
-            self.next_try = time.monotonic() + delay
+                delay = max(delay, error.retry_after + self.jitter() * min(5, max(0, error.retry_after) * 0.1))
+            self.next_try = self.clock() + delay
+            self.retry_until = self.wall_clock() + delay
             emit('upload.retry', 'error', error=error, failures=self.failures, delay=int(delay))
             return 'Сеть или сервер недоступны; очередь сохранена, повтор запланирован.'
         except ProtocolError:
             self.paused = True
             raise
+        finally:
+            if hasattr(queue, 'save_retry'):
+                queue.save_retry(self.retry_key, self.failures, self.retry_until)

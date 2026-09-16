@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+from copy import deepcopy
 import html
 import json
 import os
@@ -77,22 +78,48 @@ class PendingQueue:
         self.db.execute('PRAGMA journal_mode=DELETE')
         self.db.execute('PRAGMA synchronous=FULL')
         self.db.execute('CREATE TABLE IF NOT EXISTS pending (id TEXT PRIMARY KEY, payload TEXT NOT NULL, size INTEGER NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS capture_checkpoint (key TEXT PRIMARY KEY, payload TEXT NOT NULL)')
+        self.db.execute('CREATE TABLE IF NOT EXISTS delivery_retry (key TEXT PRIMARY KEY, failures INTEGER NOT NULL, until REAL NOT NULL)')
         self.db.commit()
+        self._capturing = False
         self.max_events, self.max_bytes = max_events, max_bytes
         self.inserted_count = 0  # Process-local, successful new commits only.
 
     def put(self, event_id: str, event: dict):
         payload = json.dumps(event, ensure_ascii=False, separators=(',', ':'))
         size = len(payload.encode('utf-8'))
-        with self.db:
-            self.db.execute('BEGIN IMMEDIATE')
-            if self.db.execute('SELECT 1 FROM pending WHERE id=?', (event_id,)).fetchone():
-                return
-            count, used = self.db.execute('SELECT count(*), coalesce(sum(size),0) FROM pending').fetchone()
-            if count >= self.max_events or used + size > self.max_bytes:
-                raise QueueFull('Queue full; collection paused. Nothing uploaded.')
-            self.db.execute('INSERT INTO pending VALUES (?,?,?)', (event_id, payload, size))
+        if self._capturing:
+            self._insert(event_id, payload, size)
+        else:
+            before = self.inserted_count
+            try:
+                with self.db:
+                    self.db.execute('BEGIN IMMEDIATE')
+                    self._insert(event_id, payload, size)
+            except BaseException:
+                self.inserted_count = before
+                raise
+
+    def _insert(self, event_id, payload, size):
+        previous = self.db.execute('SELECT payload FROM pending WHERE id=?', (event_id,)).fetchone()
+        if previous:
+            if previous[0] != payload:
+                raise ValueError('Pending event identity conflict; original retained')
+            return
+        count, used = self.db.execute('SELECT count(*), coalesce(sum(size),0) FROM pending').fetchone()
+        if count >= self.max_events or used + size > self.max_bytes:
+            raise QueueFull('Queue full; collection paused. Nothing uploaded.')
+        self.db.execute('INSERT INTO pending VALUES (?,?,?)', (event_id, payload, size))
         self.inserted_count += 1
+
+    def checkpoint(self, key, payload):
+        self.db.execute('INSERT OR REPLACE INTO capture_checkpoint VALUES (?,?)',
+                        (key, json.dumps(payload, separators=(',', ':'))))
+
+    def end_capture(self):
+        # Metadata only. Pending events and credentials are never removed.
+        with self.db:
+            self.db.execute('DELETE FROM capture_checkpoint')
 
     def batch(self, limit=100, listeners=None):
         result = []
@@ -111,14 +138,28 @@ class PendingQueue:
     def count(self):
         return self.db.execute('SELECT count(*) FROM pending').fetchone()[0]
 
-    def acknowledge(self, ids):
-        # Future transport must invoke ONLY after authenticated per-ID durable ACK.
+    def retry_states(self):
+        return {key: (failures, until) for key, failures, until in
+                self.db.execute('SELECT key,failures,until FROM delivery_retry')}
+
+    def save_retry(self, key, failures, until):
+        self.complete_upload([], {key: (failures, until)})
+
+    def complete_upload(self, ids, retries):
+        # ACK deletion and retry metadata commit together on the owning thread.
         with self.db:
             self.db.executemany('DELETE FROM pending WHERE id=?', [(i,) for i in ids])
+            self.db.executemany('INSERT OR REPLACE INTO delivery_retry VALUES (?,?,?)',
+                                [(key, *state) for key, state in retries.items()])
+
+    def acknowledge(self, ids):
+        # Invoke ONLY after authenticated per-ID durable ACK.
+        self.complete_upload(ids, {})
 
     def clear(self):
         with self.db:
             self.db.execute('DELETE FROM pending')
+            self.db.execute('DELETE FROM capture_checkpoint')
         self.db.execute('VACUUM')
 
     def close(self):
@@ -138,6 +179,16 @@ class Tailer:
         self.run_id = uuid.uuid4().hex
         self.files = {}
         self.rejected = 0
+        self.checkpoint_key = hashlib.sha256(
+            (str(self.root) + ':' + parser.__module__ + ':' + parser.__name__ + ':1').encode()).hexdigest()
+        self.recovery = {}
+        self.recovery_started = {}
+        previous = self.queue.db.execute('SELECT payload FROM capture_checkpoint WHERE key=?',
+                                         (self.checkpoint_key,)).fetchone()
+        saved = json.loads(previous[0]) if previous else None
+        self.baselines = {}
+        self.fingerprints = {}
+        prefixes = {}
         for p in self.paths():
             with safe_open(p) as f:
                 s = os.fstat(f.fileno())
@@ -145,7 +196,36 @@ class Tailer:
                 # Do not capture the continuation of a line begun before Start.
                 f.seek(max(0, s.st_size - 1))
                 partial = s.st_size > 0 and f.read(1) != b'\n'
-                self.files[(s.st_dev, s.st_ino)] = [s.st_size, listener, 0, partial]
+                key = (s.st_dev, s.st_ino)
+                self.files[key] = [s.st_size, listener, 0, partial]
+                self.baselines[key] = list(self.files[key])
+                f.seek(0)
+                prefix = f.read(min(256, s.st_size))
+                prefixes[key] = prefix
+                self.fingerprints[key] = [len(prefix), hashlib.sha256(prefix).hexdigest()]
+        if saved:
+            self.run_id = saved['run_id']
+            for item in saved['files']:
+                key, state, ceiling = tuple(item[0]), item[1], item[2]
+                fingerprint = item[3]
+                if (key in self.files and state[0] <= ceiling <= self.files[key][0]
+                        and fingerprint[1] == hashlib.sha256(prefixes[key][:fingerprint[0]]).hexdigest()):
+                    self.files[key] = state
+                    self.recovery[key] = ceiling
+                    self.recovery_started[key] = datetime.fromisoformat(item[4])
+                    self.fingerprints[key] = fingerprint
+                elif key in self.files:
+                    self.files[key][2] = state[2] + 1
+
+    def _checkpoint(self, ceilings):
+        self.queue.checkpoint(self.checkpoint_key, {
+            'run_id': self.run_id, 'started': self.started.isoformat(),
+            'files': [[list(key), state, ceilings.get(key, state[0]), self.fingerprints.get(key, [0, hashlib.sha256(b'').hexdigest()]),
+                       self.recovery_started.get(key, self.started).isoformat()]
+                      for key, state in self.files.items()]})
+
+    def stop(self):
+        self.queue.end_capture()
 
     @observed('logs.paths', successes=False)
     def paths(self):
@@ -197,6 +277,63 @@ class Tailer:
 
     @observed('capture.poll', successes=False)
     def poll(self):
+        # Persist the consented read envelope before reading. On restart only
+        # this envelope can be replayed; bytes written while closed are skipped.
+        ceilings = {}
+        for p in self.paths():
+            try:
+                with safe_open(p) as f:
+                    s = os.fstat(f.fileno())
+                    key = (s.st_dev, s.st_ino)
+                    if key not in self.files:
+                        if len(self.files) >= 1024:
+                            raise ReadFailure('file_limit')
+                        self.files[key] = [0, self.listener(f), 0, False]
+                        f.seek(0)
+                        prefix = f.read(min(256, s.st_size))
+                        self.fingerprints[key] = [len(prefix), hashlib.sha256(prefix).hexdigest()]
+                    elif s.st_size < self.files[key][0]:
+                        self.files[key] = [0, self.listener(f), self.files[key][2] + 1, False]
+                        self.recovery.pop(key, None)
+                        self.recovery_started.pop(key, None)
+                        f.seek(0)
+                        prefix = f.read(min(256, s.st_size))
+                        self.fingerprints[key] = [len(prefix), hashlib.sha256(prefix).hexdigest()]
+                    ceilings[key] = self.recovery.get(key, s.st_size)
+            except FileNotFoundError:
+                continue
+        with self.queue.db:
+            self._checkpoint(ceilings)
+        before = deepcopy(self.files)
+        recovery = dict(self.recovery)
+        recovery_started = dict(self.recovery_started)
+        inserted = self.queue.inserted_count
+        try:
+            with self.queue.db:
+                self.queue.db.execute('BEGIN IMMEDIATE')
+                self.queue._capturing = True
+                full = None
+                result = 0
+                try:
+                    result = self._poll(ceilings)
+                except QueueFull as error:
+                    full = error
+                self._checkpoint(ceilings)
+            if full is not None:
+                raise full
+            return result
+        except QueueFull:
+            raise  # Successfully committed prefix and its cursor remain valid.
+        except BaseException:
+            self.files = before
+            self.recovery = recovery
+            self.recovery_started = recovery_started
+            self.queue.inserted_count = inserted
+            raise
+        finally:
+            self.queue._capturing = False
+
+    def _poll(self, ceilings):
         accepted = 0
         self.unattributed_files = 0
         for p in self.paths():
@@ -207,10 +344,8 @@ class Tailer:
             with f:
                 s = os.fstat(f.fileno())
                 key = (s.st_dev, s.st_ino)
-                if key not in self.files:
-                    if len(self.files) >= 1024:
-                        raise ReadFailure('file_limit')
-                    self.files[key] = [0, self.listener(f), 0, False]
+                if key not in ceilings:
+                    continue  # Discovered after the durable read envelope; next poll.
                 state = self.files[key]
                 if s.st_size < state[0]:
                     state[:] = [0, self.listener(f), state[2] + 1, False]
@@ -230,7 +365,10 @@ class Tailer:
                 f.seek(state[0])
                 for _ in range(256):
                     offset = f.tell()
-                    raw = f.readline(MAX_LINE + 1)
+                    remaining = ceilings.get(key, s.st_size) - offset
+                    if remaining <= 0:
+                        break
+                    raw = f.readline(min(MAX_LINE + 1, remaining))
                     if not raw:
                         break
                     if state[3]:
@@ -242,12 +380,21 @@ class Tailer:
                         state[0], state[3] = f.tell(), not raw.endswith(b'\n')
                         continue
                     if not raw.endswith(b'\n'):
-                        break  # Keep offset; retry whole UTF-8 line after next append.
+                        if key in self.recovery and f.tell() >= self.recovery[key]:
+                            state[0] = f.tell()
+                        break  # Keep incomplete UTF-8 for the next active poll.
                     event = self.parser(raw, state[1])
-                    if event and datetime.fromisoformat(event['time']) >= self.started:
+                    if event and datetime.fromisoformat(event['time']) >= self.recovery_started.get(key, self.started):
                         identity = f'{self.run_id}:{key}:{state[2]}:{offset}'
                         event_id = hashlib.sha256(identity.encode()).hexdigest()
                         self.queue.put(event_id, event)  # Cursor only advances after commit.
                         accepted += 1
                     state[0] = f.tell()
+                if key in self.recovery and state[0] >= self.recovery[key]:
+                    generation = state[2]
+                    state[:] = self.baselines[key]
+                    state[2] = generation
+                    del self.recovery[key]
+                    self.recovery_started.pop(key, None)
+                    ceilings[key] = state[0]
         return accepted

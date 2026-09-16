@@ -86,7 +86,13 @@ def render(destination):
                     app.tick()
 
                     def settle(owner, tick):
+                        clock = [time.monotonic()]
+                        owner.uploader.clock = lambda: clock[0]
                         tick()
+                        if not owner.busy:
+                            assert owner.uploader.flush_at is not None
+                            clock[0] += 10  # Deterministically cross the coalescing deadline.
+                            tick()
                         deadline = time.monotonic() + 3
                         while owner.busy and owner.results.empty() and time.monotonic() < deadline:
                             time.sleep(.01)

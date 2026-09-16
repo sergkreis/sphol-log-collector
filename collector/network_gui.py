@@ -12,8 +12,18 @@ from .pairing_ux import PairingUX, active_url, failure_text
 
 
 class Snapshot:
-    def __init__(self, events):
+    durable = False  # Worker memory is not a persisted local ACK.
+
+    def __init__(self, events, retry_store=None):
         self.events, self.accepted = events, []
+        self.retries = retry_store.retry_states() if retry_store is not None else {}
+        self.retry_updates = {}
+
+    def retry_states(self):
+        return self.retries
+
+    def save_retry(self, key, failures, until):
+        self.retry_updates[key] = (failures, until)
 
     def batch(self, limit):
         return self.events[:limit]
@@ -329,7 +339,17 @@ class ConnectedApp(PairingUX, App):
                 self.resume_after_pair = False
             elif kind == 'upload':
                 snapshot, status = result
-                self.queue.acknowledge(snapshot.accepted)
+                try:
+                    self.queue.complete_upload(snapshot.accepted, snapshot.retry_updates)
+                except Exception as exc:
+                    emit('upload.ack', 'error', error=exc)
+                    self.upload_problem = True
+                    self.upload_enabled = False
+                    snapshot.accepted = []
+                    status = 'Не удалось сохранить подтверждение на диск. Очередь сохранена; проверьте локальное хранилище.'
+                else:
+                    if snapshot.accepted:
+                        emit('upload.ack', accepted=len(snapshot.accepted), rejected=0)
                 if hasattr(self, 'dashboard'):
                     self.dashboard.acknowledge(snapshot.accepted)
                 if snapshot.accepted:
@@ -357,11 +377,11 @@ class ConnectedApp(PairingUX, App):
             if self.pairing:
                 self.work('token', self.pairing.poll)
             elif self.upload_enabled and self.uploader:
-                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}))
+                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}), self.queue)
                 uploader = self.uploader
-                if snapshot.events:
+                if snapshot.events and uploader.ready(snapshot):
                     self.work('upload', lambda: (snapshot, uploader.upload(snapshot)))
-                else:
+                elif not snapshot.events:
                     self.connection.config(text='Очередь пуста — ждём новые события; сервер не проверялся.' if not self.queue.count() else 'Нет событий привязанного персонажа. Остальные события остаются в очереди.')
         self.refresh_controls()
         self.window.after(1000, self.network_tick)

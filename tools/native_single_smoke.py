@@ -179,7 +179,14 @@ class NativeSingleSmoke(unittest.TestCase):
                     def ack(http, path, payload, token=None):
                         seen.append((token, payload))
                         return 200, {'accepted_ids':[e['id'] for e in payload['events']], 'rejected':[]}
+                    assert app.legacy.uploader is not None
+                    clock = [time.monotonic()]
+                    app.legacy.uploader.clock = lambda: clock[0]
                     with patch('collector.transport.HTTPS.post', ack):
+                        app.legacy.tick()
+                        self.assertFalse(app.legacy.busy)
+                        self.assertEqual(seen, [])
+                        clock[0] += 10  # Deadline gate, without sleeping on Tk.
                         app.legacy.tick()
                         deadline = time.monotonic()+3
                         while app.legacy.results.empty() and time.monotonic()<deadline:

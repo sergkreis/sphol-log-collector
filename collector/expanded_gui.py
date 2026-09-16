@@ -100,6 +100,8 @@ class ExpandedControls:
 
     def stop(self):
         self.enabled = False
+        if self.tailer:
+            self.tailer.stop()
         self.tailer = None
         self.status.config(text='v2 выключен; очередь сохранена. Уже начатый запрос может завершиться.')
 
@@ -144,7 +146,17 @@ class ExpandedControls:
                     self.status.config(text=UNSUPPORTED)
             elif kind == 'upload':
                 snapshot, status = result
-                self.queue.acknowledge(snapshot.accepted)
+                try:
+                    self.queue.complete_upload(snapshot.accepted, snapshot.retry_updates)
+                except Exception:
+                    self.problem = True
+                    self.enabled = False
+                    snapshot.accepted = []
+                    status = 'Не удалось сохранить подтверждение на диск. Очередь сохранена.'
+                else:
+                    if snapshot.accepted:
+                        from .diagnostics import emit
+                        emit('upload.ack', accepted=len(snapshot.accepted), rejected=0)
                 if snapshot.accepted:
                     self.problem = False
                     self.ack_count += len(snapshot.accepted)
@@ -170,8 +182,8 @@ class ExpandedControls:
                 self.work('token', self.pairing.poll)
             elif self.enabled and self.uploader and not self.uploader.paused and time.monotonic() >= self.uploader.next_try:
                 from .network_gui import Snapshot
-                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}))
-                if snapshot.events:
+                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}), self.queue)
+                if snapshot.events and self.uploader.ready(snapshot):
                     uploader = self.uploader
                     self.work('upload', lambda: (snapshot, uploader.upload(snapshot)))
         from .queue_status import queue_summary
@@ -200,5 +212,7 @@ class ExpandedControls:
     def close(self):
         self.closed = True
         self.enabled = False
+        if self.tailer:
+            self.tailer.stop()
         self.tailer = None
         self.queue.close()

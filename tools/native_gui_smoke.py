@@ -11,7 +11,6 @@ import sqlite3
 import tempfile
 import threading
 import tkinter as tk
-from types import SimpleNamespace
 
 import unittest
 from unittest.mock import patch
@@ -161,11 +160,12 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertTrue(app.copy_button.instate(['disabled']))
                     self.assertEqual(window.clipboard_get(), 'TEST-1234')
                     app.pairing = None
-                    app.uploader = SimpleNamespace(paused=False, failures=0, credentials={
+                    from collector.transport import Uploader
+                    app.uploader = Uploader({
                         'scope': 'gamelogs:write', 'access_token': 'a'*43,
                         'installation_id': 'b'*32, 'token_type': 'Bearer',
                         'characters': [{'id': 42, 'name': 'Synthetic Smoke Pilot'}],
-                        'expires_at': '2099-01-01T00:00:00Z'})
+                        'expires_at': '2099-01-01T00:00:00Z'}, clock=lambda: 0)
                     app.show_identity()
                     app.refresh_controls()
                     window.update()

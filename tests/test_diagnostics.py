@@ -278,6 +278,16 @@ class DiagnosticsTests(unittest.TestCase):
         with patch.object(uploader.http, 'post', return_value=(200, {'accepted_ids': ['e'*64], 'rejected': []})):
             uploader.upload(snapshot)
         self.assertEqual(snapshot.accepted, ['e'*64])
+        self.assertFalse(any(e['event'] == 'upload.ack' for e in self.report()['events']))
+        # Receiving a worker snapshot is not a durable local ACK.
+        from contextlib import closing
+        from collector.core import PendingQueue
+        with closing(PendingQueue(self.root / 'pending.sqlite3')) as queue:
+            record = dict(snapshot.events[0])
+            queue.put(record.pop('id'), record)
+            with patch.object(uploader.http, 'post', return_value=(200, {'accepted_ids': ['e'*64], 'rejected': []})):
+                uploader.upload(queue)
+            self.assertEqual(queue.count(), 0)
         events = self.report()['events']
         self.assertTrue(any(e['event'] == 'upload.retry' and e['error'] == 'timeout' for e in events))
         self.assertTrue(any(e['event'] == 'credential.save' and e.get('error') == 'permission' for e in events))
