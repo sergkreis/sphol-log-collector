@@ -10,17 +10,18 @@ import subprocess
 import sys
 import tempfile
 import time
-from collector.core import PendingQueue
+from tools.released_v034_queue import PendingQueue
+import json
+import sqlite3
 from collector.credentials import CredentialStore
-from collector.expanded import ExpandedQueue
 from collector.updater import ASSET, clean_env, download
 
-# Verified public v0.3.3 EXE (asset 566383784, release 389425243) against
+# Verified public v0.3.4 EXE (asset 566510957, release 389479399) against
 # GitHub asset digest, SHA256SUMS and update manifest. SOURCE-COMMIT is
-# b285d17d6b890918d8e2786586c8d1c04085144c. Digest pins immutable bytes
+# 16e41f08eb36ab14d2551847653d09873a01d2c8. Digest pins immutable bytes
 # even though GitHub does not mark this release itself immutable.
-OLD_VERSION = '0.3.3'
-OLD_SHA = '53d0a3f9dd6cb628c8ec635d910f38f72788f1d16c450540ae9c691f9c7220b6'
+OLD_VERSION = '0.3.4'
+OLD_SHA = '5185c8a9247f1324018e99cb9cf509a992b24de1332f1d5199a9a1ee31d2080b'
 
 
 from contextlib import contextmanager
@@ -101,6 +102,20 @@ def wait_for(predicate, seconds=40):
     raise AssertionError('Native cross-version deadline exceeded')
 
 
+QUEUES = ('pending.sqlite3', 'pending-v2.sqlite3')
+
+
+def queue_rows(path, *, migrated):
+    db = sqlite3.connect(path)
+    try:
+        assert db.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert tables == ({'pending', 'capture_checkpoint', 'delivery_retry'} if migrated else {'pending'}), tables
+        return db.execute('SELECT id,payload,size FROM pending ORDER BY rowid').fetchall()
+    finally:
+        db.close()
+
+
 def main():
     assert os.name == 'nt', 'Windows required'
     replacement = Path(sys.argv[1]).absolute().read_bytes()
@@ -123,11 +138,12 @@ def main():
             CredentialStore(state / name).save({**credentials, 'scope': scope})
             assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
             assert credentials['access_token'].encode() not in (state / name).read_bytes()
-        expanded = ExpandedQueue(state)
+        expanded = PendingQueue(state / 'pending-v2.sqlite3')
         expanded.put('expanded-sentinel', {'schema': 2, 'category': 'notify',
                      'text': 'Цель неуязвима.', 'listener': 'Synthetic Pilot',
                      'time': '2030-01-01T00:00:00+00:00', 'type': 'game-event'})
         expanded.close()
+        original_rows = {name: queue_rows(state / name, migrated=False) for name in QUEUES}
         seeded = {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()}
         stage = root / 'update-pinned'; stage.mkdir()
         target = root / ASSET
@@ -155,12 +171,20 @@ def main():
             restarted = wait_for(lambda: windows(target))
             assert target.read_bytes() == replacement
             assert (root / 'SPHOLLogCollector.update-pinned.rollback.exe').read_bytes() == old
-            for name, data in before.items():
-                assert (state / name).read_bytes() == data, name
+            for name in QUEUES:
+                assert queue_rows(state / name, migrated=True) == original_rows[name]
+                # Released reader, not candidate reader: additive rollback compatibility.
+                reader = PendingQueue(state / name)
+                try:
+                    assert reader.batch() == [{**json.loads(payload), 'id': identity} for identity, payload, size in original_rows[name]]
+                finally:
+                    reader.close()
+            for name in ('credentials.dpapi', 'credentials-v2.dpapi'):
+                assert (state / name).read_bytes() == before[name], name
             assert {'pending.sqlite3', 'pending-v2.sqlite3', 'credentials.dpapi', 'credentials-v2.dpapi'} <= before.keys()
             for name, scope in (('credentials.dpapi', 'combat:write'), ('credentials-v2.dpapi', 'gamelogs:write')):
                 assert CredentialStore(state / name).load() == {**credentials, 'scope': scope}
-            print(f'OK: published frozen v{OLD_VERSION} pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; all queue/credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
+            print(f'OK: published frozen v{OLD_VERSION} pinned SHA256=' + OLD_SHA + '; actual old helper replaced and relaunched collector; new SHA256=' + new_sha + '; exact pending IDs/payload/size preserved; additive tables and integrity verified; released reader rollback compatible; credential bytes preserved; native DPAPI roundtrip before/after; capture never started; fixture forces parent exit')
         except Exception:
             print('Migration failure: original exit=' + str(original.poll()) +
                   '; fixture processes=' + process_diagnostics(target), flush=True)

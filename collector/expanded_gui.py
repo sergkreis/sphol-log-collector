@@ -94,9 +94,10 @@ class ExpandedControls:
             self.enabled = True
             self.problem = self.capture_problem = False
             self.status.config(text='Наблюдения включены: только три разрешённых сигнала привязанного персонажа. Подтверждение сервера ещё ожидается.')
-        except Exception:
+        except Exception as exc:
+            from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
             self.problem = True
-            self.status.config(text='Сбор v2 не начат: проверьте папку Gamelogs. Очередь сохранена.')
+            self.status.config(text=PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор v2 не начат: проверьте папку Gamelogs. Очередь сохранена.')
 
     def stop(self):
         self.enabled = False
@@ -172,11 +173,12 @@ class ExpandedControls:
         if self.tailer:
             try:
                 self.tailer.poll()
-            except Exception:
+            except Exception as exc:
+                from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
                 self.tailer = None
                 self.capture_problem = True
                 self.problem = True
-                self.status.config(text='Сбор v2 остановлен: лимит очереди или ошибка чтения. Данные сохранены; оригиналы в Gamelogs.')
+                self.status.config(text=PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор v2 остановлен: лимит очереди или ошибка чтения. Данные сохранены; оригиналы в Gamelogs.')
         if not self.busy:
             if self.pairing:
                 self.work('token', self.pairing.poll)

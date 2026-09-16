@@ -208,7 +208,8 @@ class App:
             self.status.set('Сбор включён — читаются новые боевые события.')
         except (OSError, ValueError) as exc:
             emit('capture.start', 'error', error=exc)
-            self.status.set('Сбор выключен — проверьте доступ к папке журналов.')
+            from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
+            self.status.set(PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор выключен — проверьте доступ к папке журналов.')
         self.capture_controls()
 
     def stop(self):
@@ -247,7 +248,8 @@ class App:
                 emit('capture.poll', 'error', error=exc)
                 self.tailer = None  # Preserve durable recovery envelope on faults.
                 self.stop()
-                self.status.set('Сбор выключен после ошибки чтения. Сохраните отчёт для поддержки; очередь сохранена.')
+                from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
+                self.status.set(PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор выключен после ошибки чтения. Сохраните отчёт для поддержки; очередь сохранена.')
         self.pending.set(f'В очереди на компьютере: {self.queue.count()} событий')
         if hasattr(self, 'main_button'):
             from .queue_status import queue_summary

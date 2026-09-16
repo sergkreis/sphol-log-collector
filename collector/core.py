@@ -62,6 +62,15 @@ def safe_open(path: Path):
         raise
 
 
+PENDING_CAPTURE_WARNING = ('Не удалось восстановить ожидающие события: исходный журнал исчез или изменён. '
+                           'Сбор остановлен; очередь и сведения восстановления сохранены. Сохраните отчёт для поддержки.')
+
+
+class PendingCaptureUnavailable(ReadFailure):
+    def __init__(self):
+        super().__init__('changed_file')
+
+
 class QueueFull(Exception):
     pass
 
@@ -117,9 +126,15 @@ class PendingQueue:
                         (key, json.dumps(payload, separators=(',', ':'))))
 
     def end_capture(self):
-        # Metadata only. Pending events and credentials are never removed.
+        # Stop never reads more bytes. Keep every observed, unparsed interval.
         with self.db:
-            self.db.execute('DELETE FROM capture_checkpoint')
+            for key, payload in self.db.execute('SELECT key,payload FROM capture_checkpoint').fetchall():
+                saved = json.loads(payload)
+                saved['files'] = [item for item in saved['files'] if item[1][0] < item[2]]
+                if saved['files']:
+                    self.checkpoint(key, saved)
+                else:
+                    self.db.execute('DELETE FROM capture_checkpoint WHERE key=?', (key,))
 
     def batch(self, limit=100, listeners=None):
         result = []
@@ -170,9 +185,7 @@ class Tailer:
     """One foreground capture session. Existing files start at EOF, not history."""
     @observed('capture.start')
     def __init__(self, root: Path, queue: PendingQueue, started=None, parser=parse_line):
-        self.root = Path(root).resolve(strict=True)
-        if not self.root.is_dir():
-            raise NotADirectoryError(20, 'Gamelogs directory is missing')
+        self.root = Path(root).resolve()
         self.queue = queue
         self.parser = parser
         self.started = started or datetime.now(timezone.utc)
@@ -181,14 +194,22 @@ class Tailer:
         self.rejected = 0
         self.checkpoint_key = hashlib.sha256(
             (str(self.root) + ':' + parser.__module__ + ':' + parser.__name__ + ':1').encode()).hexdigest()
+        self.stopped = False
+        self.anchors = {}
+        self.observed = {}
         self.recovery = {}
         self.recovery_started = {}
         previous = self.queue.db.execute('SELECT payload FROM capture_checkpoint WHERE key=?',
                                          (self.checkpoint_key,)).fetchone()
         saved = json.loads(previous[0]) if previous else None
+        if not self.root.is_dir():
+            if saved and any(item[1][0] < item[2] for item in saved['files']):
+                raise PendingCaptureUnavailable()
+            raise NotADirectoryError(20, 'Gamelogs directory is missing')
         self.baselines = {}
         self.fingerprints = {}
         prefixes = {}
+        sources = {}
         for p in self.paths():
             with safe_open(p) as f:
                 s = os.fstat(f.fileno())
@@ -197,6 +218,7 @@ class Tailer:
                 f.seek(max(0, s.st_size - 1))
                 partial = s.st_size > 0 and f.read(1) != b'\n'
                 key = (s.st_dev, s.st_ino)
+                sources[key] = p
                 self.files[key] = [s.st_size, listener, 0, partial]
                 self.baselines[key] = list(self.files[key])
                 f.seek(0)
@@ -207,24 +229,50 @@ class Tailer:
             self.run_id = saved['run_id']
             for item in saved['files']:
                 key, state, ceiling = tuple(item[0]), item[1], item[2]
+                if key in self.files:
+                    self.files[key][2] = state[2] + 1
+                    self.baselines[key][2] = state[2] + 1
+                if state[0] >= ceiling:
+                    continue
                 fingerprint = item[3]
-                if (key in self.files and state[0] <= ceiling <= self.files[key][0]
+                anchor = item[5] if len(item) > 5 else None
+                valid_anchor = True
+                if anchor and key in sources:
+                    with safe_open(sources[key]) as f:
+                        valid_anchor = self._matches(f, anchor)
+                if (valid_anchor and key in self.files and state[0] <= ceiling <= self.files[key][0]
                         and fingerprint[1] == hashlib.sha256(prefixes[key][:fingerprint[0]]).hexdigest()):
                     self.files[key] = state
                     self.recovery[key] = ceiling
                     self.recovery_started[key] = datetime.fromisoformat(item[4])
                     self.fingerprints[key] = fingerprint
-                elif key in self.files:
-                    self.files[key][2] = state[2] + 1
+                    if anchor:
+                        self.anchors[key] = anchor
+                else:
+                    raise PendingCaptureUnavailable()
+        self.observed = dict(self.recovery)
+
+    @staticmethod
+    def _matches(f, anchor):
+        offset, length, digest = anchor
+        f.seek(offset)
+        return hashlib.sha256(f.read(length)).hexdigest() == digest
+
+    def _anchor(self, f, key):
+        end = self.files[key][0]
+        offset = max(0, end - 256)
+        f.seek(offset)
+        self.anchors[key] = [offset, end - offset, hashlib.sha256(f.read(end - offset)).hexdigest()]
 
     def _checkpoint(self, ceilings):
         self.queue.checkpoint(self.checkpoint_key, {
             'run_id': self.run_id, 'started': self.started.isoformat(),
             'files': [[list(key), state, ceilings.get(key, state[0]), self.fingerprints.get(key, [0, hashlib.sha256(b'').hexdigest()]),
-                       self.recovery_started.get(key, self.started).isoformat()]
+                       self.recovery_started.get(key, self.started).isoformat(), self.anchors.get(key)]
                       for key, state in self.files.items()]})
 
     def stop(self):
+        self.stopped = True
         self.queue.end_capture()
 
     @observed('logs.paths', successes=False)
@@ -279,12 +327,26 @@ class Tailer:
     def poll(self):
         # Persist the consented read envelope before reading. On restart only
         # this envelope can be replayed; bytes written while closed are skipped.
+        if self.stopped:
+            return 0
         ceilings = {}
+        seen = set()
         for p in self.paths():
             try:
                 with safe_open(p) as f:
                     s = os.fstat(f.fileno())
                     key = (s.st_dev, s.st_ino)
+                    seen.add(key)
+                    if self.recovery and key not in self.recovery:
+                        continue
+                    if key in self.files:
+                        pending = self.observed.get(key, 0) > self.files[key][0]
+                        fp = self.fingerprints[key]
+                        changed = not self._matches(f, [0, *fp])
+                        anchor = self.anchors.get(key)
+                        changed = changed or bool(anchor and not self._matches(f, anchor))
+                        if (pending and s.st_size < self.observed[key]) or (changed and (pending or s.st_size >= self.files[key][0])):
+                            raise PendingCaptureUnavailable()
                     if key not in self.files:
                         if len(self.files) >= 1024:
                             raise ReadFailure('file_limit')
@@ -294,6 +356,7 @@ class Tailer:
                         self.fingerprints[key] = [len(prefix), hashlib.sha256(prefix).hexdigest()]
                     elif s.st_size < self.files[key][0]:
                         self.files[key] = [0, self.listener(f), self.files[key][2] + 1, False]
+                        self.anchors.pop(key, None)
                         self.recovery.pop(key, None)
                         self.recovery_started.pop(key, None)
                         f.seek(0)
@@ -302,8 +365,12 @@ class Tailer:
                     ceilings[key] = self.recovery.get(key, s.st_size)
             except FileNotFoundError:
                 continue
+        if any(key not in seen and ceiling > self.files[key][0] for key, ceiling in self.observed.items()):
+            raise PendingCaptureUnavailable()
         with self.queue.db:
             self._checkpoint(ceilings)
+        self.observed = dict(ceilings)
+        anchors = deepcopy(self.anchors)
         before = deepcopy(self.files)
         recovery = dict(self.recovery)
         recovery_started = dict(self.recovery_started)
@@ -326,6 +393,7 @@ class Tailer:
             raise  # Successfully committed prefix and its cursor remain valid.
         except BaseException:
             self.files = before
+            self.anchors = anchors
             self.recovery = recovery
             self.recovery_started = recovery_started
             self.queue.inserted_count = inserted
@@ -347,15 +415,18 @@ class Tailer:
                 if key not in ceilings:
                     continue  # Discovered after the durable read envelope; next poll.
                 state = self.files[key]
-                if s.st_size < state[0]:
-                    state[:] = [0, self.listener(f), state[2] + 1, False]
+                if s.st_size < ceilings[key]:
+                    raise PendingCaptureUnavailable()
                 state[1] = self.listener(f)
                 if not state[1]:
                     # Pre-login files with only a header are normal, not a failure.
                     # Preserve the cursor so a late listener can still attribute events.
                     f.seek(state[0])
                     for _ in range(256):
-                        candidate = f.readline(MAX_LINE + 1)
+                        remaining = ceilings[key] - f.tell()
+                        if remaining <= 0:
+                            break
+                        candidate = f.readline(min(MAX_LINE + 1, remaining))
                         if not candidate:
                             break
                         if candidate.endswith(b'\n') and self.parser(candidate):
@@ -387,13 +458,18 @@ class Tailer:
                     if event and datetime.fromisoformat(event['time']) >= self.recovery_started.get(key, self.started):
                         identity = f'{self.run_id}:{key}:{state[2]}:{offset}'
                         event_id = hashlib.sha256(identity.encode()).hexdigest()
-                        self.queue.put(event_id, event)  # Cursor only advances after commit.
+                        try:
+                            self.queue.put(event_id, event)  # Cursor only advances after commit.
+                        except QueueFull:
+                            self._anchor(f, key)
+                            raise
                         accepted += 1
                     state[0] = f.tell()
+                self._anchor(f, key)
                 if key in self.recovery and state[0] >= self.recovery[key]:
-                    generation = state[2]
+                    # Finish the old interval atomically; never read the skipped gap.
                     state[:] = self.baselines[key]
-                    state[2] = generation
+                    self.anchors.pop(key, None)
                     del self.recovery[key]
                     self.recovery_started.pop(key, None)
                     ceilings[key] = state[0]
