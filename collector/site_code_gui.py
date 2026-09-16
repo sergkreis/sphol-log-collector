@@ -28,6 +28,8 @@ class SiteCodeControls:
         self.choice.pack(side='left')
         self.button = ttk.Button(frame, text='Привязать код / повторить', command=self.submit)
         self.button.pack(side='left')
+        self.legacy_button = ttk.Button(app.network_area, text='Другой способ: подтверждение в браузере', command=app.pair)
+        self.legacy_button.pack(anchor='w')
         self.label = ttk.Label(app.network_area, wraplength=680, text='Выберите то же разрешение, что на сайте. combat:write — бой; gamelogs:write — бой и три наблюдения. Сбор не включается.')
         self.label.pack(anchor='w')
         if self.uncertain:
@@ -64,6 +66,7 @@ class SiteCodeControls:
         threading.Thread(target=run, daemon=True).start()
 
     def refresh(self):
+        self.legacy_button.config(state='disabled' if self.uncertain or self.busy or self.app.uploader else 'normal')
         self.button.config(state='disabled' if self.busy or time.monotonic() < self.next_try else 'normal')
         self.entry.config(state='disabled' if self.uncertain else 'normal')
         self.choice.config(state='disabled' if self.uncertain else 'readonly')
