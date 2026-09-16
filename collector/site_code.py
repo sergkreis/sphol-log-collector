@@ -52,6 +52,35 @@ class PendingStore:
         if self.load() != payload:
             raise ProtocolError('Pending verification failed')
 
+    @observed('site.pending.archive')
+    def archive(self):
+        """Reviewed abandonment, bounded and encrypted; never evict a proof.
+
+        Copy/readback precedes unlink. A crash between these operations is
+        idempotent: the same encrypted bytes find their existing archive slot.
+        """
+        with safe_open.__wrapped__(self.path) as stream:
+            raw = stream.read(65537)
+        if not raw or len(raw) > 65536:
+            raise ProtocolError('Invalid pending archive size')
+        directory = self.path.parent / 'site-recovery-archive'
+        directory.mkdir(mode=0o700, exist_ok=True)
+        for index in range(16):
+            target = directory / ('recovery-%02d.dpapi' % index)
+            try:
+                with safe_open.__wrapped__(target) as stream:
+                    existing = stream.read(65537)
+            except FileNotFoundError:
+                atomic(target, raw)
+                with safe_open.__wrapped__(target) as stream:
+                    existing = stream.read(65537)
+                if existing != raw:
+                    raise ProtocolError('Archive verification failed')
+            if existing == raw:
+                self.clear()
+                return
+        raise ProtocolError('Recovery archive full; pending proof preserved')
+
     def clear(self):
         self.path.unlink(missing_ok=True)
 

@@ -22,7 +22,12 @@ EVENTS = frozenset(('app.start', 'app.close', 'app.init', 'gamelogs.inspect',
     'pair.start', 'pair.poll', 'pair.redeem', 'pair.browser', 'pair.wait', 'pair.failed',
     'credential.load', 'credential.save', 'upload.send', 'upload.ack',
     'upload.retry', 'http.response', 'export', 'http.connect_tls', 'http.headers', 'http.read', 'http.complete',
-    'site.click', 'site.redeem', 'site.pending.load', 'site.pending.save'))
+    'site.click', 'site.redeem', 'site.pending.load', 'site.pending.save',
+    'site.pending.archive', 'site.review', 'site.retry'))
+SITE_ERRORS = frozenset(('invalid_request', 'not_member', 'scope_consent_required',
+    'invalid_grant', 'active_installation_limit', 'expired_token', 'slow_down',
+    'membership_unavailable', 'collector_capacity', 'temporarily_unavailable',
+    'pairing_recovery_unavailable', 'not_found'))
 OUTCOMES = frozenset(('start', 'ok', 'error', 'pending', 'unavailable', 'missing'))
 ERRORS = frozenset(('permission', 'missing', 'not_directory', 'disk_full',
     'sharing_violation', 'timeout', 'tls', 'network', 'encoding', 'protocol',
@@ -43,7 +48,7 @@ def clean(record):
     if type(stamp) is not int or not 0 <= stamp <= 9999999999:
         return None
     out = {'time': stamp, 'event': record['event']}
-    for key, allowed in (('outcome', OUTCOMES), ('error', ERRORS), ('exception', CLASSES)):
+    for key, allowed in (('outcome', OUTCOMES), ('error', ERRORS), ('exception', CLASSES), ('site_error', SITE_ERRORS)):
         if type(record.get(key)) is str and record[key] in allowed:
             out[key] = record[key]
     for key in NUMBERS:
@@ -81,7 +86,8 @@ def exception_fields(exc):
     elif isinstance(exc, ConnectionError) or name in ('gaierror', 'HTTPException'): category = 'network'
     elif isinstance(exc, OSError): category = 'os_error'
     return {'error': category, 'exception': name if name in CLASSES else 'OSError' if isinstance(exc, OSError) else None,
-            'errno': number, 'winerror': winerror, 'status': getattr(exc, 'status', None)}
+            'errno': number, 'winerror': winerror, 'status': getattr(exc, 'status', None),
+            'site_error': getattr(exc, 'code', None) if name == 'SiteCodeFailure' else None}
 
 
 def emit(event, outcome='ok', error=None, **fields):
