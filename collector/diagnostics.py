@@ -21,17 +21,18 @@ EVENTS = frozenset(('app.start', 'app.close', 'app.init', 'gamelogs.inspect',
     'capture.start', 'capture.poll', 'capture.stop', 'logs.open', 'logs.paths',
     'pair.start', 'pair.poll', 'pair.redeem', 'pair.browser', 'pair.wait', 'pair.failed',
     'credential.load', 'credential.save', 'upload.send', 'upload.ack',
-    'upload.retry', 'http.response', 'export'))
-OUTCOMES = frozenset(('start', 'ok', 'error', 'pending', 'unavailable'))
+    'upload.retry', 'http.response', 'export', 'http.connect_tls', 'http.headers', 'http.read', 'http.complete',
+    'site.click', 'site.redeem', 'site.pending.load', 'site.pending.save'))
+OUTCOMES = frozenset(('start', 'ok', 'error', 'pending', 'unavailable', 'missing'))
 ERRORS = frozenset(('permission', 'missing', 'not_directory', 'disk_full',
     'sharing_violation', 'timeout', 'tls', 'network', 'encoding', 'protocol',
     'queue_full', 'file_limit', 'unsafe_file', 'changed_file', 'os_error', 'internal'))
 CLASSES = frozenset(('PermissionError', 'FileNotFoundError', 'NotADirectoryError',
     'TimeoutError', 'SSLError', 'OSError', 'UnicodeDecodeError', 'ProtocolError',
-    'HTTPFailure', 'QueueFull', 'ReadFailure', 'HTTPException'))
+    'HTTPFailure', 'SiteCodeFailure', 'QueueFull', 'ReadFailure', 'HTTPException'))
 NUMBERS = frozenset(('errno', 'winerror', 'status', 'count', 'accepted', 'rejected',
     'failures', 'delay', 'exists', 'accessible', 'unattributed', 'windows_major',
-    'windows_minor', 'windows_build'))
+    'windows_minor', 'windows_build', 'duration_ms', 'correlation'))
 _sink = None
 
 
@@ -74,7 +75,7 @@ def exception_fields(exc):
     elif number == errno.ENOSPC: category = 'disk_full'
     elif isinstance(exc, UnicodeError): category = 'encoding'
     elif name == 'SSLError': category = 'tls'
-    elif name in ('ProtocolError', 'HTTPFailure'): category = 'protocol'
+    elif name in ('ProtocolError', 'HTTPFailure', 'SiteCodeFailure'): category = 'protocol'
     elif name == 'QueueFull': category = 'queue_full'
     elif name == 'ReadFailure': category = getattr(exc, 'reason', 'os_error')
     elif isinstance(exc, ConnectionError) or name in ('gaierror', 'HTTPException'): category = 'network'
@@ -103,7 +104,7 @@ def observed(event, successes=True):
             except Exception as exc:
                 emit(event, 'error', error=exc)
                 raise
-            if successes: emit(event, 'pending' if result is None and event == 'pair.poll' else 'ok')
+            if successes: emit(event, 'missing' if result is None and event in ('credential.load', 'site.pending.load') else 'pending' if result is None and event == 'pair.poll' else 'ok')
             return result
         return run
     return decorate

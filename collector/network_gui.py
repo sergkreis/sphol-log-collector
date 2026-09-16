@@ -9,6 +9,7 @@ from .gui import App, tk
 from .credentials import CredentialStore
 from .transport import Pairing, Uploader, PAIR_URI, ORIGIN
 from .pairing_ux import PairingUX, active_url, failure_text
+from .site_code_gui import blocked
 
 
 class Snapshot:
@@ -87,6 +88,8 @@ class ConnectedApp(PairingUX, App):
         self.legacy = LegacyBacklog(self)
         from .update_gui import UpdateControls
         self.updates = UpdateControls(self)
+        from .site_code_gui import SiteCodeControls
+        self.site_codes = SiteCodeControls(self)
         self.open_site = ttk.Button(self.footer, text='Открыть SPHOL', command=lambda: webbrowser.open(ORIGIN))
         self.open_site.pack(side='right')
         window.update_idletasks()
@@ -106,7 +109,7 @@ class ConnectedApp(PairingUX, App):
             else:
                 self.pair_button.pack_forget()
 
-        self.unpair_button.config(state='disabled' if self.busy or getattr(self, 'recovered_token', None) else 'normal')
+        self.unpair_button.config(state='disabled' if blocked(self) or self.busy or getattr(self, 'recovered_token', None) else 'normal')
         self.upload_state.config(text='Отправка включена — только для привязанного персонажа' if self.upload_enabled else 'Отправка выключена — данные остаются на компьютере')
         if self.upload_enabled and getattr(self.uploader, 'failures', 0):
             self.upload_state.config(text='Сеть недоступна · очередь сохранена, повтор автоматически')
@@ -166,6 +169,8 @@ class ConnectedApp(PairingUX, App):
         threading.Thread(target=run, daemon=True).start()
 
     def pair(self):
+        if blocked(self):
+            return
         if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
             return
         if self.queue.count() and not self.uploader:
@@ -181,16 +186,18 @@ class ConnectedApp(PairingUX, App):
         self.work('pair', self.pairing.start)
 
     def start(self):
+        if blocked(self):
+            return
         if active_url(self.pairing):
             self.open_pairing_browser()
             return
         if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
             return
-        if not self.uploader or self.uploader.credentials['scope'] != 'gamelogs:write':
+        if not self.uploader:
             self.resume_after_pair = True
             self.pair()
             return
-        if getattr(self, 'expanded', None):
+        if getattr(self, 'expanded', None) and self.uploader.credentials['scope'] == 'gamelogs:write':
             if self.expanded.busy:
                 self.connection.config(text='Завершается запрос наблюдений; повторите «Начать сбор». Очередь сохранена.')
                 return
@@ -199,7 +206,7 @@ class ConnectedApp(PairingUX, App):
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
         expanded = getattr(self, 'expanded', None)
-        if self.tailer and expanded and expanded.uploader:
+        if self.tailer and expanded and expanded.uploader and self.uploader.credentials['scope'] == 'gamelogs:write':
             expanded.start(integrated=True)
         if self.tailer and getattr(self, 'legacy', None):
             self.legacy.authorize()
@@ -241,6 +248,8 @@ class ConnectedApp(PairingUX, App):
         return closed
 
     def unpair(self):
+        if blocked(self):
+            return
         if self.busy or getattr(self, 'recovered_token', None) or (getattr(self, 'expanded', None) and self.expanded.busy):
             return
         if not messagebox.askyesno('Удалить привязку?', 'Удалить текущий локальный ключ и текущую очередь событий? Прежняя привязка наблюдений и её очередь сохранятся. Отозвать доступ устройства на сайте нужно отдельно.'):

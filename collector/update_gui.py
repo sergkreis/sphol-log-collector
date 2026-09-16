@@ -10,6 +10,9 @@ from .version import VERSION
 
 
 def active(app):
+    from .site_code_gui import blocked
+    if blocked(app):
+        return True
     expanded = getattr(app, 'expanded', None)
     legacy = getattr(app, 'legacy', None)
     return bool((legacy and (legacy.enabled or legacy.busy)) or app.tailer or app.local_capture or app.upload_enabled or app.busy or app.pairing or getattr(app, 'recovered_token', None) or (expanded and (expanded.enabled or expanded.tailer or expanded.busy or expanded.pairing)))

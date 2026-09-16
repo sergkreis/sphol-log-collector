@@ -74,6 +74,9 @@ class ExpandedControls:
         threading.Thread(target=run, daemon=True).start()
 
     def approve(self):
+        from .site_code_gui import blocked
+        if blocked(self.app):
+            return
         if self.busy or self.pairing or self.tailer:
             return
         if not messagebox.askyesno('Новое согласие на отправку v2', CONSENT):

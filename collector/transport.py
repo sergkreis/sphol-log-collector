@@ -31,6 +31,12 @@ class HTTPFailure(ProtocolError):
         self.status, self.retry_after = status, retry_after
 
 
+class SiteCodeFailure(HTTPFailure):
+    def __init__(self, status, code, retry=0):
+        super().__init__(status, retry)
+        self.code = code
+
+
 def encode(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'), allow_nan=False).encode('utf-8')
 
@@ -65,7 +71,7 @@ def retry_after(value, now=None):
 
 class HTTPS:
     def post(self, path, payload, token=None):
-        if path not in ('/api/collector/v1/pairings', '/api/collector/v1/pairings/token', '/api/collector/v1/pairings/browser', '/api/collector/v1/events'):
+        if path not in ('/api/collector/v1/site-codes/redeem', '/api/collector/v1/pairings', '/api/collector/v1/pairings/token', '/api/collector/v1/pairings/browser', '/api/collector/v1/events'):
             raise ProtocolError('Disallowed endpoint')
         body = encode(payload)
         if len(body) > MAX_BODY:
@@ -76,21 +82,45 @@ class HTTPS:
                 raise ProtocolError('Invalid credential')
             headers['Authorization'] = 'Bearer ' + token
         connection = http.client.HTTPSConnection('sphol.com', timeout=15, context=ssl.create_default_context())
+        started = time.monotonic()
+        correlation = secrets.randbelow(2147483647)
+        stage = 'http.connect_tls'
         try:
+            emit(stage, 'start', correlation=correlation)
+            connection.connect()
+            emit(stage, correlation=correlation)
+            stage = 'http.headers'
+            emit(stage, 'start', correlation=correlation)
             connection.request('POST', path, body=body, headers=headers)
             response = connection.getresponse()
-            emit('http.response', status=response.status)
+            emit('http.response', status=response.status, correlation=correlation)
+            emit(stage, correlation=correlation)
+            stage = 'http.read'
+            emit(stage, 'start', correlation=correlation)
             raw = response.read(MAX_BODY + 1)
+            emit(stage, correlation=correlation)
             if len(raw) > MAX_BODY:
                 raise ProtocolError('Response exceeds byte limit')
             status = response.status
+            if path == '/api/collector/v1/site-codes/redeem' and status != 200:
+                from .site_code import ERROR_CODES
+                data = decode(raw)
+                if (response.getheader('Content-Type', '').split(';')[0].strip().lower() != 'application/json'
+                        or not isinstance(data, dict) or set(data) != {'error'}
+                        or not isinstance(data['error'], str) or data['error'] not in ERROR_CODES.get(status, set())):
+                    raise ProtocolError('Invalid redemption failure')
+                raise SiteCodeFailure(status, data['error'], retry_after(response.getheader('Retry-After', '')))
             if status not in (200, 201, 400):
                 retry = response.getheader('Retry-After', '')
                 raise HTTPFailure(status, retry_after(retry))
             if response.getheader('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
                 raise ProtocolError('Expected JSON response')
             return status, decode(raw)
+        except Exception as exc:
+            emit(stage, 'error', error=exc, correlation=correlation)
+            raise
         finally:
+            emit('http.complete', duration_ms=min(2147483647, int((time.monotonic() - started) * 1000)), correlation=correlation)
             connection.close()
 
 

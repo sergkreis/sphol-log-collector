@@ -57,7 +57,7 @@ class CredentialStore:
     @observed('credential.load')
     def load(self):
         try:
-            with safe_open(self.path) as stream:
+            with safe_open.__wrapped__(self.path) as stream:
                 raw = stream.read(65537)
         except FileNotFoundError:
             return None

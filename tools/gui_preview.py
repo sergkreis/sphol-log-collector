@@ -65,8 +65,9 @@ def render(destination):
                         app.uploader = Uploader({**credentials, 'scope': 'combat:write'}, http=http)
                         with patch.object(app, 'pair') as pair:
                             app.main_button.invoke()
-                        pair.assert_called_once()
-                        assert app.tailer is None and app.expanded.tailer is None
+                        pair.assert_not_called()
+                        assert app.tailer is not None and app.expanded.tailer is None
+                        app.stop()
                         app.uploader = Uploader(credentials, http=http)
                     app.main_button.invoke()
                     app.expanded.uploader.http = expanded_http
