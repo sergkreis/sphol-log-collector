@@ -11,7 +11,7 @@ ROUTE = '/api/collector/v1/site-codes/redeem'
 ERROR_CODES = {400: {'invalid_request'}, 403: {'not_member', 'scope_consent_required'},
     409: {'invalid_grant', 'active_installation_limit'}, 410: {'expired_token'},
     429: {'slow_down'}, 503: {'membership_unavailable', 'collector_capacity',
-    'temporarily_unavailable', 'pairing_recovery_unavailable'}, 404: {'not_found'}}
+    'temporarily_unavailable', 'pairing_recovery_unavailable', 'authority_busy', 'authority_unavailable'}, 404: {'not_found'}}
 
 
 def validate_request(data):

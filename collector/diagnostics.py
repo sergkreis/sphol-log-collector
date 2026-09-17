@@ -27,7 +27,7 @@ EVENTS = frozenset(('app.start', 'app.close', 'app.init', 'gamelogs.inspect',
 SITE_ERRORS = frozenset(('invalid_request', 'not_member', 'scope_consent_required',
     'invalid_grant', 'active_installation_limit', 'expired_token', 'slow_down',
     'membership_unavailable', 'collector_capacity', 'temporarily_unavailable',
-    'pairing_recovery_unavailable', 'not_found'))
+    'pairing_recovery_unavailable', 'authority_busy', 'authority_unavailable', 'not_found'))
 OUTCOMES = frozenset(('start', 'ok', 'error', 'pending', 'unavailable', 'missing'))
 ERRORS = frozenset(('permission', 'missing', 'not_directory', 'disk_full',
     'sharing_violation', 'timeout', 'tls', 'network', 'encoding', 'protocol',

@@ -97,6 +97,13 @@ class SiteTests(unittest.TestCase):
             with patch('collector.transport.http.client.HTTPSConnection', return_value=connection), patch.object(diagnostics, '_sink', sink):
                 with self.assertRaises(SiteCodeFailure) as cm: HTTPS().post(ROUTE, {'secret': CODE})
                 self.assertEqual(cm.exception.code, 'slow_down')
+                for code in ('authority_busy', 'authority_unavailable'):
+                    response.status = 503
+                    response.read.return_value = encode({'error': code})
+                    with self.assertRaises(SiteCodeFailure) as temporary:
+                        HTTPS().post(ROUTE, {'secret': CODE})
+                    self.assertEqual(temporary.exception.code, code)
+                    self.assertEqual(temporary.exception.retry_after, 9)
                 with self.assertRaises(HTTPFailure) as cm: HTTPS().post('/api/collector/v1/events', {})
                 self.assertNotIsInstance(cm.exception, SiteCodeFailure)
             text = str(sink.events)

@@ -10,18 +10,16 @@ import subprocess
 import sys
 import tempfile
 import time
-from tools.released_v034_queue import PendingQueue
+from tools.released_v035_queue import PendingQueue
 import json
 import sqlite3
 from collector.credentials import CredentialStore
 from collector.updater import ASSET, clean_env, download
 
-# Verified public v0.3.4 EXE (asset 566510957, release 389479399) against
-# GitHub asset digest, SHA256SUMS and update manifest. SOURCE-COMMIT is
-# 16e41f08eb36ab14d2551847653d09873a01d2c8. Digest pins immutable bytes
-# even though GitHub does not mark this release itself immutable.
-OLD_VERSION = '0.3.4'
-OLD_SHA = '5185c8a9247f1324018e99cb9cf509a992b24de1332f1d5199a9a1ee31d2080b'
+# Published v0.3.5, source 56c0a5ba92201b8ed087e7c881ae4bb08724327e.
+# Digest verified against live GitHub release asset metadata.
+OLD_VERSION = '0.3.5'
+OLD_SHA = 'f9c056be413a7dbdb7feb6d67afcd824fd942b32189db1c890b35b8d59e78831'
 
 
 from contextlib import contextmanager
@@ -143,7 +141,7 @@ def main():
                      'text': 'Цель неуязвима.', 'listener': 'Synthetic Pilot',
                      'time': '2030-01-01T00:00:00+00:00', 'type': 'game-event'})
         expanded.close()
-        original_rows = {name: queue_rows(state / name, migrated=False) for name in QUEUES}
+        original_rows = {name: queue_rows(state / name, migrated=True) for name in QUEUES}
         seeded = {p.name: p.read_bytes() for p in state.iterdir() if p.is_file()}
         stage = root / 'update-pinned'; stage.mkdir()
         target = root / ASSET

@@ -30,5 +30,4 @@ class PresentationTests(unittest.TestCase):
                 self.assertIn('Для персонажа: 0', queue_summary(queue, set()))
 
     def test_next_version_is_accepted_by_existing_updater(self):
-        self.assertEqual(VERSION, '0.3.5')
-        self.assertGreater(version(VERSION), version('0.3.0'))
+        self.assertGreater(version(VERSION), version('0.3.5'))
