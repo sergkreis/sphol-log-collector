@@ -20,9 +20,9 @@ class SingleIdentity(unittest.TestCase):
         with patch.object(gui.App, 'start') as start:
             app.start()
         start.assert_called_once()
-        app.expanded.bind.assert_called_once_with(app.uploader.credentials)
-        app.expanded.start.assert_called_once_with(integrated=True)
-        app.legacy.authorize.assert_called_once()
+        app.expanded.bind.assert_not_called()
+        app.expanded.start.assert_not_called()
+        app.legacy.authorize.assert_not_called()
         app.legacy.queue.clear.assert_not_called()
         self.assertIs(app.legacy.uploader, old)
 
@@ -33,7 +33,7 @@ class SingleIdentity(unittest.TestCase):
         backlog.uploader = Mock(paused=False, credentials={'characters':[{'id':99,'name':'Previous Pilot'}]})
         with patch('collector.legacy_backlog.messagebox.askyesno', return_value=False) as consent:
             backlog.authorize()
-        self.assertIn('Previous Pilot', consent.call_args.args[1])
+        consent.assert_not_called()
         self.assertFalse(backlog.enabled)
         backlog.queue.clear.assert_not_called()
         backlog.queue.acknowledge.assert_not_called()

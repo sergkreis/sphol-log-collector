@@ -229,7 +229,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     # Exercise scheduled Tk capture and network-idle callbacks.
                     window.after(1200, window.quit)
                     window.mainloop()
-                    self.assertEqual(app.local_capture.count, 2)
+                    self.assertEqual(app.local_capture.count, 1)
                     self.assertEqual(queue.count(), 1)
                     self.assertIn('Событий на компьютере: 1', app.pending.get())
                     app.main_button.invoke()

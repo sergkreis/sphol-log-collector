@@ -49,8 +49,8 @@ class ExpandedTests(unittest.TestCase):
                 with p.open('ab') as f:
                     for category in ('notify','None','combat','info'):
                         f.write(f'[ 2030.01.01 00:00:02 ] ({category}) Fleet warp initiated.\n'.encode())
-                self.assertEqual(tailer.poll(),2)
-                self.assertEqual({e['category'] for e in q.batch()}, {'notify','None'})
+                self.assertEqual(tailer.poll(),0)
+                self.assertEqual(q.batch(), [])
                 self.assertEqual(legacy.batch(), saved)
                 self.assertNotIn('PRIVATE', str(q.batch()))
                 ids = [e['id'] for e in q.batch()]

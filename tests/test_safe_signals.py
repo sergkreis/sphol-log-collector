@@ -37,7 +37,6 @@ class SafeSignalsTests(unittest.TestCase):
             from collector.core import PendingQueue
             PendingQueue.put(queue,'a'*64,event)
             before=queue.batch()
-            with self.assertRaises(ProtocolError):
-                build_batch(queue,creds())
+            self.assertEqual(build_batch(queue,creds())['events'], [])
             self.assertEqual(queue.batch(),before)
             self.assertEqual(queue.count(),1)

@@ -8,4 +8,6 @@ def is_combat(event):
         return False
     if schema == 1:
         return event.get('type') == 'combat' and 'category' not in event
-    return schema == 2 and event.get('type') == 'game-event' and event.get('category') == 'combat'
+    # Released expanded producers sanitize notify/None only, never combat.
+    # Unsupported schema-2 rows stay byte/ID-identical and must not block v1.
+    return False

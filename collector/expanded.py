@@ -36,7 +36,13 @@ def parse_game_line(raw, listener=''):
 
 
 class ExpandedQueue(PendingQueue):
-    """Separate bounded file; never migrate IDs or read local-captures."""
+    """Compatibility-only historical queue; never migrate IDs or captures.
+
+    put retains historical fixture/import validation, not capture admission.
+    Production capture uses an inert parser and GUI start/approve are disabled;
+    no production caller admits observations through put. Existing ACK result
+    drains still own this store. Do not use this helper for new capture.
+    """
     def __init__(self, directory, **limits):
         super().__init__(directory / 'pending-v2.sqlite3', **limits)
 

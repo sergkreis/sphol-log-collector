@@ -17,6 +17,39 @@ if SERVER:
     from collector.expanded import ExpandedQueue, capture, SCOPE
 
     class V2ContractIntegration(CollectorHTTPE2E):
+        def test_combat_only_existing_scopes_capacity_ack_and_unknown_retention(self):
+            import copy
+            import time
+            root = Path(self._store_tmp.name)
+            for scope in ('combat:write', 'gamelogs:write'):
+                pairing = self.t.Pairing(scope=scope)
+                code = pairing.start()
+                self.assertEqual(self.request('approval', {'user_code':code, 'consent':True, 'scope':scope})[0], 200)
+                pairing.next_poll = 0
+                credentials = pairing.poll()
+                before_credentials = copy.deepcopy(credentials)
+                with closing(self.core.PendingQueue(root/(scope.replace(':','-')+'.sqlite'))) as queue:
+                    unknown = {'schema':2, 'type':'game-event', 'category':'combat', 'listener':'Test Pilot', 'text':'unsupported', 'time':collector_api.utc(time.time())}
+                    for number in range(150):
+                        queue.put(format(number, '064x'), unknown)
+                    before = queue.db.execute('SELECT id,payload FROM pending ORDER BY rowid').fetchall()
+                    event = {'schema':1, 'type':'combat', 'listener':'Test Pilot', 'text':'100 damage to Synthetic Target', 'time':collector_api.utc(time.time())}
+                    queue.put('f'*64,event)
+                    payload = self.t.build_batch(queue, credentials)
+                    self.assertEqual([e['id'] for e in payload['events']], ['f'*64])
+                    self.assertEqual(payload['events'][0]['schema'], 1)
+                    uploader = self.t.Uploader(credentials)
+                    with patch.object(collector_api,'MAX_EVENTS',0):
+                        self.assert_retry_scheduled(uploader,queue)
+                    self.assertEqual(queue.count(),151)
+                    uploader.next_try=0
+                    uploader.upload(queue)
+                    self.assertEqual(queue.db.execute('SELECT id,payload FROM pending ORDER BY rowid').fetchall(),before)
+                    self.assertEqual(credentials,before_credentials)
+                    self.assertEqual(uploader.failures,0)
+                    with self.api.transaction() as db:
+                        self.assertEqual(db.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],0)
+
         def test_v2_explicit_scope_private_storage_capacity_and_ack(self):
             legacy = self.pair()
             pairing = self.t.Pairing(scope=SCOPE)

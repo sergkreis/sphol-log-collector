@@ -79,7 +79,7 @@ def render(destination):
                     assert not app.dashboard.warning.winfo_viewable()
                     assert not app.expanded.summary.winfo_viewable()
                     if scene == 'unbound':
-                        assert ui.scope.get() == 'gamelogs:write'
+                        assert ui.scope.get() == 'combat:write'
                         assert ui.entry.winfo_viewable() and ui.get_code_button.winfo_viewable()
                         assert not ui.review_button.winfo_viewable() and not ui.abandon_button.winfo_viewable()
                         ui.get_code_button.invoke()

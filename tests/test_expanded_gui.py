@@ -25,7 +25,7 @@ class ExpandedCallbacks(unittest.TestCase):
             self.panel.start()
         capture.assert_not_called()
         self.assertFalse(self.panel.enabled)
-        self.assertIn('не подтверждён', self.panel.status.config.call_args.kwargs['text'])
+        self.assertIn('отключён', self.panel.status.config.call_args.kwargs['text'])
 
     def test_decline_separate_consent_never_reads(self):
         self.panel.uploader = Mock(paused=False, credentials={**credentials(),'scope':SCOPE})
@@ -38,7 +38,7 @@ class ExpandedCallbacks(unittest.TestCase):
     def test_new_browser_scope_does_not_touch_legacy(self):
         with patch.object(expanded_gui.messagebox, 'askyesno',return_value=True), patch.object(expanded_gui, 'Pairing') as pairing:
             self.panel.approve()
-        pairing.assert_called_once_with(scope=SCOPE)
+        pairing.assert_not_called()
         self.panel.queue.clear.assert_not_called()
         self.panel.app.store.clear.assert_not_called()
         self.panel.app.queue.clear.assert_not_called()

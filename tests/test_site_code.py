@@ -41,7 +41,7 @@ class SiteTests(unittest.TestCase):
                 self.assertTrue(ui.busy)
                 self.assertTrue(ui.button.instate(['disabled']))
                 self.assertEqual(ui.code.get(), '')
-                ui.redemption.prepare.assert_called_once_with(CODE, 'gamelogs:write')
+                ui.redemption.prepare.assert_called_once_with(CODE, 'combat:write')
         finally:
             root.destroy()
             gc.collect()
@@ -147,7 +147,7 @@ class SiteTests(unittest.TestCase):
             ui.submit()
             self.assertTrue(ui.busy)
             self.assertTrue(ui.uncertain)
-            ui.redemption.prepare.assert_called_once_with(CODE, 'gamelogs:write')
+            ui.redemption.prepare.assert_called_once_with(CODE, 'combat:write')
             thread.return_value.start.assert_called_once()
             ui.submit()
             self.assertEqual(ui.redemption.prepare.call_count, 1)

@@ -65,7 +65,7 @@ class NativeSingleSmoke(unittest.TestCase):
                         app.site_codes.legacy_button.invoke()
                     assert app.pairing is not None
                     self.assertTrue(app.pairing.browser)
-                    self.assertEqual(app.pairing.scope, 'gamelogs:write')
+                    self.assertEqual(app.pairing.scope, 'combat:write')
                     proof = 's'*43
                     app.pairing.browser_uri = PAIR_URI + '#' + proof
                     app.pairing.deadline = float('inf')

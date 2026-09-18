@@ -21,7 +21,7 @@ class CombatPolicyTests(unittest.TestCase):
     def test_existing_v1_combat(self):
         self.assertTrue(is_combat({'schema':1,'type':'combat'}))
     def test_explicit_v2_combat_only(self):
-        self.assertTrue(is_combat({'schema':2,'type':'game-event','category':'combat'}))
+        self.assertFalse(is_combat({'schema':2,'type':'game-event','category':'combat'}))
         for category in ('notify','None','mining','route','Combat','',None):
             self.assertFalse(is_combat({'schema':2,'type':'game-event','category':category}))
     def test_no_silent_upgrade(self):
