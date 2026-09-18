@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import uuid
-from .core import safe_open
+from .core import safe_open, parse_line
 
 
 class CaptureStopped(Exception):
@@ -133,6 +133,9 @@ class LocalCapture:
                             raise CaptureStopped('Слишком длинная строка: запись остановлена; оригинал в Gamelogs.')
                         if not raw.endswith(b'\n'):
                             break
+                        if parse_line(raw) is None:
+                            state[0] = f.tell()
+                            continue
                         text = raw.decode('utf-8')
                         record = json.dumps({'file': p.name, 'offset': offset, 'line': text},
                                             ensure_ascii=False).encode('utf-8') + b'\n'

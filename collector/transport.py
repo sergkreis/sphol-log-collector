@@ -223,7 +223,12 @@ def build_batch(queue, credentials, count_limit=100, byte_limit=MAX_BODY):
     schema = 2 if expanded else 1
     names = {c['name'] for c in credentials['characters']}
     events = []
-    for event in queue.batch(count_limit):
+    from .combat_policy import is_combat
+    from .core import PendingQueue
+    candidates = queue.batch(count_limit, combat_only=True) if isinstance(queue, PendingQueue) else queue.batch(count_limit)
+    for event in candidates:
+        if not is_combat(event):
+            continue
         if event.get('listener') not in names:
             continue
         if not isinstance(event.get('id'), str) or not re.fullmatch('[0-9a-f]{64}', event['id']):

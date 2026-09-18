@@ -35,7 +35,7 @@ class SiteCodeControls:
         self.entry = ttk.Entry(row, textvariable=self.code, width=30)
         self.entry.pack(side='left')
         # New website codes have one supported consent; recovery keeps its saved scope.
-        self.scope = StringVar(master=app.window, value='gamelogs:write')
+        self.scope = StringVar(master=app.window, value='combat:write')
         self.button = ttk.Button(row, text='Привязать', command=self.submit)
         self.button.pack(side='left', padx=8)
         self.links = ttk.Frame(frame)
@@ -48,7 +48,7 @@ class SiteCodeControls:
         self.review_button.pack(anchor='w')
         self.abandon_button = ttk.Button(self.recovery_actions, text='Завершить восстановление…', command=self.abandon)
         self.abandon_button.pack(anchor='w')
-        self.label = ttk.Label(frame, wraplength=510, text='Боевые события и обезличенные наблюдения.\nПривязка не включает сбор.')
+        self.label = ttk.Label(frame, wraplength=510, text='Только боевые события. Небоевые данные не собираются.\nПривязка не включает сбор.')
         self.label.pack(anchor='w')
         if self.uncertain:
             self.label.config(text='Привязка не завершена. Повторите сохранённый запрос или проверьте устройства на сайте. Новый код пока не нужен.')
@@ -116,7 +116,7 @@ class SiteCodeControls:
         self.auto_retry = False
         self.label.config(text='Сохраняем защищённый запрос и связываемся с SPHOL… Сбор выключен.')
         try:
-            self.redemption.prepare(self.code.get(), self.scope.get() if self.uncertain else 'gamelogs:write')
+            self.redemption.prepare(self.code.get(), self.scope.get() if self.uncertain else 'combat:write')
         except Exception as exc:
             emit('site.pending.save', 'error', error=exc)
             self.uncertain = self.pending.path.exists()

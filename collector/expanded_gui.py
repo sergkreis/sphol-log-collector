@@ -23,11 +23,11 @@ class ExpandedControls:
         self.ack_at = None
         self.problem = self.capture_problem = False
         self.baseline = self.queue.inserted_count
-        ttk.Label(frame, text='Боевые события + наблюдения', style='Muted.TLabel').pack(anchor='w')
-        ttk.Label(frame, text='Варп флота · дальность модуля · неуязвимость цели. Без Chatlogs и маршрутов.', style='Small.TLabel', wraplength=700).pack(anchor='w')
+        ttk.Label(frame, text='Только боевые события', style='Muted.TLabel').pack(anchor='w')
+        ttk.Label(frame, text='Небоевые наблюдения не собираются и не отправляются.', style='Small.TLabel', wraplength=700).pack(anchor='w')
         self.summary = ttk.Label(frame, wraplength=700)
         self.summary.pack(anchor='w', pady=(6, 0))
-        self.status = ttk.Label(app.settings, text='Наблюдения выключены. «Начать сбор» включает все разрешённые события.', wraplength=620)
+        self.status = ttk.Label(app.settings, text='Старая очередь наблюдений сохранена локально; отправка отключена.', wraplength=620)
         self.status.pack(anchor='w')
         self.pending = ttk.Label(app.settings)
         self.pending.pack(anchor='w')
@@ -76,35 +76,12 @@ class ExpandedControls:
         threading.Thread(target=run, daemon=True).start()
 
     def approve(self):
-        from .site_code_gui import blocked
-        if blocked(self.app):
-            return
-        if self.busy or self.pairing or self.tailer:
-            return
-        if not messagebox.askyesno('Новое согласие на отправку v2', CONSENT):
-            return
-        self.pairing = Pairing(scope=SCOPE)
-        self.work('pair', self.pairing.start)
+        self.status.config(text='Небоевой поток отключён. Привязка и очередь сохранены локально.')
+        return
 
     def start(self, integrated=False):
-        if getattr(self, '_poll_failed', False):
-            return
-        if self.busy or self.pairing or self.tailer:
-            return
-        if not self.uploader or self.uploader.paused:
-            self.status.config(text=UNSUPPORTED)
-            return
-        if not integrated and not messagebox.askyesno('Отправка разрешённых сигналов', CONSENT):
-            return
-        try:
-            self.tailer = capture(self.app.log_root, self.queue, consent=True, credentials=self.uploader.credentials)
-            self.enabled = True
-            self.problem = self.capture_problem = False
-            self.status.config(text='Наблюдения включены: только три разрешённых сигнала привязанного персонажа. Подтверждение сервера ещё ожидается.')
-        except Exception as exc:
-            from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
-            self.problem = True
-            self.status.config(text=PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор v2 не начат: проверьте папку Gamelogs. Очередь сохранена.')
+        self.status.config(text='Небоевой поток отключён. Привязка и очередь сохранены локально.')
+        return
 
     def stop(self):
         self.enabled = False
@@ -216,12 +193,6 @@ class ExpandedControls:
         if not self.busy:
             if self.pairing:
                 self.work('token', self.pairing.poll)
-            elif self.enabled and self.uploader and not self.uploader.paused and time.monotonic() >= self.uploader.next_try:
-                from .network_gui import Snapshot
-                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}), self.queue)
-                if snapshot.events and self.uploader.ready(snapshot):
-                    uploader = self.uploader
-                    self.work('upload', lambda: (snapshot, uploader.upload(snapshot)))
         from .queue_status import queue_summary
         names = {c['name'] for c in self.uploader.credentials['characters']} if self.uploader else set()
         self.pending.config(text='Наблюдения · ' + queue_summary(self.queue, names))
@@ -238,10 +209,10 @@ class ExpandedControls:
         counts = queue_counts(self.queue, names)
         if self.uploader and not self.uploader.paused:
             self.approve_button.pack_forget()
-            self.summary.config(text=f'Наблюдения за запуск: собрано {self.queue.inserted_count - self.baseline} (все персонажи) · принято {self.ack_count} · к отправке {counts["eligible"]}')
+            self.summary.config(text=f'Старая очередь: {self.queue.count()} · сохранена локально, отправка отключена · принято ранее: {self.ack_count}')
         else:
             self.approve_button.pack_forget()
-            self.summary.config(text='Наблюдения не отправляются · нужно разрешение')
+            self.summary.config(text='Наблюдения отключены · старая очередь сохранена')
         from .dashboard import refresh
         refresh(self.app)
 

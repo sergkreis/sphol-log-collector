@@ -95,12 +95,12 @@ class App:
         self.danger_area.pack(fill='x', pady=12)
         ttk.Button(self.danger_area, text='Удалить очередь…', command=self.clear).pack(anchor='w', pady=4)
         capture = self.settings
-        ttk.Label(capture, text='Полная локальная запись · никогда не отправляется', style='Muted.TLabel').pack(anchor='w', pady=8)
+        ttk.Label(capture, text='Локальная запись боевых событий · не отправляется', style='Muted.TLabel').pack(anchor='w', pady=8)
         self.local_enabled = tk.BooleanVar(value=False)
-        self.local_toggle = ttk.Checkbutton(capture, text='Сохранять все игровые события локально', variable=self.local_enabled, command=self.toggle_local)
+        self.local_toggle = ttk.Checkbutton(capture, text='Сохранять боевые события локально', variable=self.local_enabled, command=self.toggle_local)
         self.local_toggle.pack(anchor='w', pady=(12, 0))
-        ttk.Label(capture, text='Только новые строки Gamelogs всех типов, НЕ Chatlogs. Возможны чувствительные игровые уведомления. Полные локальные записи никогда не отправляются. Лимит: 64 МиБ на сессию / 128 МиБ всего; при заполнении запись остановится.', wraplength=620).pack(anchor='w')
-        self.local_status = tk.StringVar(value='Полная локальная запись выключена. История уже остаётся в исходных Gamelogs.')
+        ttk.Label(capture, text='Только новые строки Gamelogs категории combat. Добыча, маршруты, уведомления и Chatlogs не записываются. Локальные записи не отправляются. Лимит: 64 МиБ на сессию / 128 МиБ всего; при заполнении запись остановится.', wraplength=620).pack(anchor='w')
+        self.local_status = tk.StringVar(value='Локальная запись боевых событий выключена. История уже остаётся в исходных Gamelogs.')
         ttk.Label(capture, textvariable=self.local_status, wraplength=620).pack(anchor='w')
         frame = self.settings
         ttk.Separator(frame).pack(fill='x', pady=(4, 10))
@@ -175,7 +175,7 @@ class App:
         if not self.local_enabled.get():
             self.stop_local()
             return
-        if not messagebox.askyesno('Локальная запись всех событий', 'Сохранять новые строки всех типов из Gamelogs? Они могут содержать чувствительные уведомления. Chatlogs не читаются. Эти записи не отправляются на сервер. История до включения не копируется.'):
+        if not messagebox.askyesno('Локальная запись боевых событий', 'Сохранять только новые боевые строки категории combat из Gamelogs? Добыча, маршруты, уведомления и Chatlogs не записываются. Эти записи не отправляются на сервер. История до включения не копируется.'):
             self.local_enabled.set(False)
             return
         try:

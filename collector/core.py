@@ -136,13 +136,17 @@ class PendingQueue:
                 else:
                     self.db.execute('DELETE FROM capture_checkpoint WHERE key=?', (key,))
 
-    def batch(self, limit=100, listeners=None):
+    def batch(self, limit=100, listeners=None, combat_only=False):
         result = []
         limit = min(max(limit, 0), 100)
         if not limit:
             return result
         for identity, payload in self.db.execute('SELECT id,payload FROM pending ORDER BY rowid'):
             event = json.loads(payload)
+            if combat_only:
+                from .combat_policy import is_combat
+                if not is_combat(event):
+                    continue
             if listeners is not None and event.get('listener') not in listeners:
                 continue
             result.append({**event, 'id': identity})

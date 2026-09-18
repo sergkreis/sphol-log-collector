@@ -50,4 +50,6 @@ class ExpandedQueue(PendingQueue):
 def capture(root, queue, *, consent=False, credentials=None, started=None):
     if consent is not True or not credentials or credentials.get('scope') != SCOPE:
         raise ValueError('Explicit cloud consent and browser-approved scope required')
-    return Tailer(root, queue, started=started, parser=parse_game_line)
+    # Keep the old parser for historical inspection, never capture a second
+    # stream. Canonical combat capture belongs exclusively to the v1 Tailer.
+    return Tailer(root, queue, started=started, parser=lambda raw, listener='': None)

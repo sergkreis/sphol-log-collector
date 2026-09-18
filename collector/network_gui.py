@@ -55,7 +55,7 @@ class ConnectedApp(PairingUX, App):
 
         self.last_ack = ttk.Label(self.capture_area, text='Подтверждений пока нет', wraplength=510, style='Small.TLabel')
         self.last_ack.pack(anchor='center', pady=(8, 0))
-        self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий и разрешённых наблюдений на sphol.com.', wraplength=620)
+        self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий на sphol.com.', wraplength=620)
         self.connection.pack(anchor='w', pady=(6, 8))
         self.code_frame = code_frame = ttk.Frame(self.network_area)
         ttk.Label(code_frame, text='Код привязки:').pack(side='left', padx=(0, 8))
@@ -121,7 +121,7 @@ class ConnectedApp(PairingUX, App):
         elif self.uploader and self.uploader.paused:
             self.upload_state.config(text='Отправка приостановлена · очередь сохранена, см. диагностику')
         elif self.uploader and not self.upload_enabled:
-            self.upload_state.config(text='Отправка выключена. «Начать сбор» отправляет все разрешённые события на sphol.com')
+            self.upload_state.config(text='Отправка выключена. «Начать сбор» отправляет только боевые события на sphol.com')
         self.capture_controls()
 
     def clear_pairing_code(self):
@@ -184,7 +184,7 @@ class ConnectedApp(PairingUX, App):
             self.resume_after_pair = False
             return
         self.pair_attempt = getattr(self, 'pair_attempt', 0) + 1
-        self.pairing = Pairing(scope='gamelogs:write', browser=True, credentials=self.uploader.credentials if self.uploader else None)
+        self.pairing = Pairing(scope='combat:write', browser=True, credentials=self.uploader.credentials if self.uploader else None)
         self.pairing_notice('Получаем ссылку подтверждения от SPHOL… Это может занять до 20 секунд. Сбор ещё не начат.')
         self.work('pair', self.pairing.start)
 
@@ -202,19 +202,10 @@ class ConnectedApp(PairingUX, App):
             self.resume_after_pair = True
             self.pair()
             return
-        if getattr(self, 'expanded', None) and self.uploader.credentials['scope'] == 'gamelogs:write':
-            if self.expanded.busy:
-                self.connection.config(text='Завершается запрос наблюдений; повторите «Начать сбор». Очередь сохранена.')
-                return
-            self.expanded.bind(self.uploader.credentials)
         self.upload_problem = False
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
-        expanded = getattr(self, 'expanded', None)
-        if self.tailer and expanded and expanded.uploader and self.uploader.credentials['scope'] == 'gamelogs:write':
-            expanded.start(integrated=True)
-        if self.tailer and getattr(self, 'legacy', None):
-            self.legacy.authorize()
+        # v1 is the only new capture stream. Old queues/bindings stay dormant.
         self.refresh_controls()
 
     def stop(self):
@@ -319,7 +310,7 @@ class ConnectedApp(PairingUX, App):
             elif kind == 'pair':
                 if getattr(self.pairing, 'browser', False):
                     if active_url(self.pairing):
-                        self.pairing_notice('Ссылка готова. Подтвердите сбор боевых событий и трёх безопасных наблюдений в браузере.')
+                        self.pairing_notice('Ссылка готова. Подтвердите сбор только боевых событий в браузере.')
                         self.open_pairing_browser()
                     else:
                         self.pairing_failed('Ссылка подтверждения недействительна или истекла. Нажмите «Повторить привязку».')
@@ -347,7 +338,7 @@ class ConnectedApp(PairingUX, App):
                 self.pairing = None
                 if saved and hasattr(self, 'pairing_panel'):
                     self.pairing_panel.pack_forget()
-                if saved and getattr(self, 'resume_after_pair', False) and self.uploader and self.uploader.credentials['scope'] == 'gamelogs:write':
+                if saved and getattr(self, 'resume_after_pair', False) and self.uploader:
                     self.resume_after_pair = False
                     self.start()
                 self.resume_after_pair = False
@@ -391,11 +382,11 @@ class ConnectedApp(PairingUX, App):
             if self.pairing:
                 self.work('token', self.pairing.poll)
             elif self.upload_enabled and self.uploader:
-                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}), self.queue)
+                snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}, combat_only=True), self.queue)
                 uploader = self.uploader
                 if snapshot.events and uploader.ready(snapshot):
                     self.work('upload', lambda: (snapshot, uploader.upload(snapshot)))
                 elif not snapshot.events:
-                    self.connection.config(text='Очередь пуста — ждём новые события; сервер не проверялся.' if not self.queue.count() else 'Нет событий привязанного персонажа. Остальные события остаются в очереди.')
+                    self.connection.config(text='Очередь пуста — ждём новые события; сервер не проверялся.' if not self.queue.count() else 'Нет боевых событий привязанного персонажа. Неизвестные и прочие записи сохранены локально и не отправляются.')
         self.refresh_controls()
         self.window.after(1000, self.network_tick)

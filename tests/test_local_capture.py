@@ -23,26 +23,27 @@ class LocalCaptureTests(unittest.TestCase):
                         f.write(f'[ 2099.01.01 00:00:00 ] ({kind}) Synthetic event\n'.encode())
                     f.write('Синтетика'.encode()[:-1])
                 c.poll()
-                self.assertEqual(c.count, 6)
+                self.assertEqual(c.count, 1)
                 with p.open('ab') as f:
                     f.write('Синтетика'.encode()[-1:] + b'\n')
                 c.poll()
-                self.assertEqual(c.count, 7)
+                self.assertEqual(c.count, 1)
                 p.rename(root / 'rotated.txt')
                 p.write_bytes(b'(notify) Synthetic rotated\n')
                 c.poll()
-                self.assertEqual(c.count, 8)
+                self.assertEqual(c.count, 1)
                 p.write_bytes(b'new\n')
                 c.poll()
-                self.assertEqual(c.count, 9)
+                self.assertEqual(c.count, 1)
                 path = c.path
                 if os.name != 'nt':
                     self.assertEqual(c.directory.stat().st_mode & 0o777, 0o700)
                     self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             records = [json.loads(x) for x in path.read_text(encoding='utf-8').splitlines()]
-            self.assertEqual(records[6]['line'], 'Синтетика\n')
+            self.assertEqual(len(records), 1)
+            self.assertIn('(combat)', records[0]['line'])
             self.assertFalse(any('old' in r['line'] for r in records))
-            self.assertEqual(json.loads((path.parent / 'session.json').read_text())['complete_lines'], 9)
+            self.assertEqual(json.loads((path.parent / 'session.json').read_text())['complete_lines'], 1)
             with closing(LocalCapture(root, base, consent=True)) as c:
                 c.poll()
                 self.assertEqual(c.count, 0)
@@ -60,7 +61,7 @@ class LocalCaptureTests(unittest.TestCase):
             chat.mkdir()
             with self.assertRaises(ValueError):
                 LocalCapture(chat, base, consent=True)
-            for options, data in [({'max_bytes': 1}, b'event\n'), ({'max_line': 3}, b'long\n'), ({}, b'\xff\n')]:
+            for options, data in [({'max_bytes': 1}, b'[ 2099.01.01 00:00:00 ] (combat) event\n'), ({'max_line': 3}, b'long\n')]:
                 with closing(LocalCapture(root, base, consent=True, **options)) as c:
                     p = root / 'new.txt'
                     with p.open('ab') as f:
