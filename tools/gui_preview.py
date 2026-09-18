@@ -17,7 +17,7 @@ class SyntheticHTTP:
     offline = False
 
     def post(self, path, payload, token=None):
-        assert path in ('/api/collector/v1/events', '/api/collector/v2/events')
+        assert path == '/api/collector/v1/events'
         if self.offline:
             raise OSError('Synthetic offline')
         return 200, {'accepted_ids': [e['id'] for e in payload['events']], 'rejected': []}
@@ -49,7 +49,7 @@ def render(destination):
                 app = ConnectedApp(window, logs, queue)
                 try:
                     ttk.Label(app.frame, text='PREVIEW · синтетические данные · сеть заблокирована', style='Small.TLabel').pack(before=app.header, fill='x', pady=(0, 8))
-                    http, expanded_http = SyntheticHTTP(), SyntheticHTTP()
+                    http = SyntheticHTTP()
                     credentials = {'access_token': 'synthetic-token-' * 3, 'token_type': 'Bearer',
                         'scope': 'gamelogs:write', 'installation_id': 'a' * 32,
                         'characters': [{'id': 1, 'name': 'Synthetic Pilot'}], 'expires_at': '2099-01-01T00:00:00Z'}
@@ -70,9 +70,9 @@ def render(destination):
                         app.stop()
                         app.uploader = Uploader(credentials, http=http)
                     app.main_button.invoke()
-                    app.expanded.uploader.http = expanded_http
+                    assert app.expanded.uploader is None
                     assert app.tailer and app.upload_enabled
-                    assert app.expanded.tailer
+                    assert app.expanded.tailer is None
                     with patch('collector.update_gui.os.name', 'nt'), patch('collector.update_gui.sys.frozen', True, create=True):
                         app.updates.refresh_button()
                         assert app.updates.button.instate(['disabled'])
@@ -105,29 +105,20 @@ def render(destination):
                     ack = app.dashboard.ack_at
                     app.network_tick()
                     assert app.dashboard.ack_at == ack
-                    settle(app.expanded, app.expanded.tick)
-                    assert app.expanded.ack_count == 2
-                    assert app.expanded.ack_at is not None
-                    observation_ack = app.expanded.ack_at
                     app.expanded.tick()
-                    assert app.expanded.ack_at == observation_ack
+                    assert app.expanded.ack_count == 0
+                    assert app.expanded.ack_at is None
                     assert 'Последнее подтверждение сервера' in app.last_ack.cget('text')
                     assert app.expanded.queue.count() == 0
                     if scene == 'offline':
-                        # Successful combat ACK cannot mask a failed observation stream.
-                        expanded_http.offline = True
-                        (logs / 'offline.txt').write_text('Listener: Synthetic Pilot\n-----\n' + f'[ {when} ] (notify) Цель неуязвима.\n', encoding='utf-8')
-                        settle(app.expanded, app.expanded.tick)
-                        assert app.expanded.queue.count() == 1
-                        assert app.expanded.ack_count == 2
-                        assert 'Не отправляются: наблюдения' in app.dashboard.notice.cget('text')
-                        # Conversely observation ACK cannot mask combat failure.
-                        app.uploader.failures = 1
-                        app.expanded.uploader.failures = 0
+                        http.offline = True
+                        (logs / 'offline.txt').write_text('Listener: Synthetic Pilot\n-----\n' + f'[ {when} ] (combat) Synthetic offline damage\n', encoding='utf-8')
+                        app.tick()
+                        settle(app, app.network_tick)
+                        assert app.uploader.failures == 1
+                        assert app.dashboard.confirmed == 12
                         app.dashboard.refresh()
                         assert 'Не отправляются: боевые' in app.dashboard.notice.cget('text')
-                        app.uploader.failures = 0
-                        app.expanded.uploader.failures = 1
                     if scene == 'denied':
                         app.uploader.paused = True
                         app.upload_enabled = False
@@ -143,8 +134,8 @@ def render(destination):
                     assert not app.site_codes.frame.winfo_viewable()
                     assert not app.support_button.winfo_viewable()
                     assert not app.expanded.summary.winfo_viewable()
-                    assert [int(x.cget('text')) for x in app.dashboard.metrics] == ([15, 14, 1] if scene == 'offline' else [14, 14, 0])
-                    assert list(queue.db.execute('SELECT * FROM pending')) == legacy
+                    assert [int(x.cget('text')) for x in app.dashboard.metrics] == ([13, 12, 1] if scene == 'offline' else [12, 12, 0])
+                    assert list(queue.db.execute("SELECT * FROM pending WHERE id LIKE 'legacy-%'")) == legacy
                     if scene in ('settings', 'updater-feedback'):
                         app.settings_button.invoke()
                         window.update()
@@ -199,7 +190,7 @@ def render(destination):
                         app.main_button.invoke()
                     assert app.tailer is None and not app.upload_enabled
                     assert app.expanded.tailer is None and not app.expanded.enabled
-                    assert list(queue.db.execute('SELECT * FROM pending')) == legacy
+                    assert list(queue.db.execute("SELECT * FROM pending WHERE id LIKE 'legacy-%'")) == legacy
                     if scene == 'active-expanded':
                         app.main_button.invoke()
                         with patch.object(app.tailer, 'poll', side_effect=OSError('synthetic read error')):

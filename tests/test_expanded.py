@@ -64,25 +64,34 @@ class ExpandedTests(unittest.TestCase):
             q.put('b'*64,e)
             with self.assertRaises(QueueFull):
                 q.put('c'*64,e)
-            with self.assertRaises(t.ProtocolError):
-                t.build_batch(q,credentials())
+            before = q.batch()
+            for binding in (credentials(), creds()):
+                self.assertEqual(t.build_batch(q, binding)['events'], [])
+                http = Mock()
+                t.Uploader(binding, http).upload(q)
+                http.post.assert_not_called()
             mixed = Mock()
             mixed.batch.return_value = [event(), *q.batch()]
             batch = t.build_batch(mixed,creds())
-            self.assertEqual(batch['schema'],2)
-            self.assertEqual([e['schema'] for e in batch['events']],[1,2])
-            http = Mock()
-            http.post.side_effect = t.HTTPFailure(503)
-            uploader = t.Uploader(creds(),http)
-            uploader.upload(q)
-            self.assertEqual(q.count(),1)
-            self.assertGreater(uploader.next_try,0)
-            self.assertFalse(uploader.paused)
-            uploader.next_try = 0
-            http.post.side_effect = None
-            http.post.return_value = (200, {'accepted_ids':['b'*64], 'rejected':[]})
-            uploader.upload(q)
-            self.assertEqual(q.count(),0)
+            self.assertEqual([e['schema'] for e in batch['events']],[1])
+            with closing(PendingQueue(Path(tmp)/'combat.sqlite')) as combat:
+                combat.put(event()['id'], {k:v for k,v in event().items() if k != 'id'})
+                http = Mock()
+                http.post.side_effect = t.HTTPFailure(503)
+                uploader = t.Uploader(creds(),http)
+                uploader.upload(combat)
+                self.assertEqual(combat.count(),1)
+                self.assertGreater(uploader.next_try,0)
+                self.assertFalse(uploader.paused)
+                uploader.next_try = 0
+                http.post.side_effect = None
+                http.post.return_value = (200, {'accepted_ids':[event()['id']], 'rejected':[]})
+                uploader.upload(combat)
+                self.assertEqual(http.post.call_args.args[0], '/api/collector/v1/events')
+                self.assertEqual(combat.count(),0)
+            self.assertEqual(q.batch(),before)
+            with closing(ExpandedQueue(Path(tmp))) as reopened:
+                self.assertEqual(reopened.batch(),before)
 
     def test_new_pairing_requests_scope_rejects_legacy_redemption(self):
         http = Mock()

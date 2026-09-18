@@ -90,16 +90,30 @@ if SERVER:
                 with source.open('a',encoding='utf-8') as f:
                     for category,text in [('notify','Переход в варп-режим по приказу Synthetic Commander'),('None','Synthetic Scoop I* отключается, теряя руду в пространстве, так как вы отдалились на 1600,00 м от цели, что превышает радиус действия в 1500,00 м.'),('notify','Цель неуязвима.'),('info','<b>Synthetic private notification</b>'),('combat','Synthetic combat')]:
                         f.write(datetime.now(timezone.utc).strftime('[ %Y.%m.%d %H:%M:%S ] ') + f'({category}) {text}\n')
-                self.assertEqual(tailer.poll(),3)
-                payload = self.t.build_batch(pending,credentials)
-                self.assertEqual(self.request('events',payload,token=legacy['access_token'])[0],403)
-                uploader = self.t.Uploader(credentials)
-                with patch.object(collector_api,'MAX_EVENTS',0):
-                    self.assert_retry_scheduled(uploader,pending)
-                self.assertEqual(pending.count(),3)
-                uploader.next_try=0
-                uploader.upload(pending)
+                self.assertEqual(tailer.poll(),0)
                 self.assertEqual(pending.count(),0)
+                # Historical compatibility fixture: direct old-server admission,
+                # never the current client's inert capture or production Uploader.
+                from collector.expanded import parse_game_line
+                historical = [parse_game_line(line.encode(), 'Test Pilot') for line in source.read_text().splitlines()]
+                historical = [e for e in historical if e is not None]
+                self.assertEqual(len(historical),3)
+                for number, event in enumerate(historical, 1):
+                    pending.put(format(number, '064x'), event)
+                payload = {'schema':2, 'events':pending.batch()}
+                before = pending.batch()
+                self.assertEqual(self.t.build_batch(pending,credentials)['events'],[])
+                self.assertEqual(self.request('events',payload,token=legacy['access_token'])[0],403)
+                with patch.object(collector_api,'MAX_EVENTS',0):
+                    self.assertEqual(self.request('events',payload,token=credentials['access_token'])[0],503)
+                self.assertEqual(pending.batch(),before)
+                with self.api.transaction() as con:
+                    self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],0)
+                status, ack = self.request('events',payload,token=credentials['access_token'])
+                self.assertEqual(status,200)
+                self.assertEqual(ack['accepted_ids'],[e['id'] for e in before])
+                # Server ACK does not authorize today's client to remove dormant rows.
+                self.assertEqual(pending.batch(),before)
                 with self.api.transaction() as con:
                     self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0],3)
                     self.assertEqual(con.execute('SELECT count(*) FROM collector_events').fetchone()[0],0)
