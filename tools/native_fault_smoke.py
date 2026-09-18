@@ -58,11 +58,37 @@ class NativeFaultSmoke(unittest.TestCase):
                         worker = threading.Thread(target=delayed_ack)
                         worker.start()
                         fault = patch('collector.dashboard.refresh', side_effect=RuntimeError('synthetic callback')) if stream == 'main' else patch.object(target, 'refresh_summary', side_effect=RuntimeError('synthetic callback'))
-                        with fault:
-                            window.after(0, target.tick)
-                            window.after(30, window.quit)
-                            window.mainloop()
+                        order = []
+                        def capture_fault():
+                            # Patch only this capture callback, not the whole Tk
+                            # loop: network_tick also uses dashboard.refresh.
+                            with fault as injected:
+                                target.tick()
+                            self.assertTrue(injected.called)
+                            order.append('capture')
+
+                        def network_neighbor(label):
+                            # Force both legal orderings without leaving extra
+                            # recurring network timers from these probe calls.
+                            timers = set(window.tk.call('after', 'info'))
+                            app.network_tick()
+                            added = set(window.tk.call('after', 'info')) - timers
+                            self.assertEqual(len(added), 1)
+                            for callback in added:
+                                window.after_cancel(callback)
+                            order.append(label)
+
+                        window.after(0, lambda: network_neighbor('before'))
+                        window.after(0, capture_fault)
+                        window.after(0, lambda: network_neighbor('after'))
+                        window.after(30, window.quit)
+                        window.mainloop()
+                        self.assertEqual(order, ['before', 'capture', 'after'])
+                        self.assertEqual(errors, [])
                         self.assertTrue(getattr(target, '_poll_failed', False))
+                        self.assertIsNone(target._poll_after)
+                        self.assertEqual(q.db.execute('SELECT id,payload,size FROM pending ORDER BY rowid').fetchall(), before)
+                        self.assertEqual(q.db.execute('SELECT * FROM capture_checkpoint').fetchall(), checkpoint)
                         self.assertIsNone(target.tailer)
                         self.assertTrue(target.capture_problem)
                         if stream in ('main', 'expanded'):
