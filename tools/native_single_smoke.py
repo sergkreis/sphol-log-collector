@@ -58,8 +58,11 @@ class NativeSingleSmoke(unittest.TestCase):
                     self.assertFalse(app.expanded.enabled)
                     self.assertIsNone(app.tailer)
                     self.assertIsNone(app.expanded.tailer)
+                    app.settings_button.invoke()
+                    window.update()
+                    self.assertTrue(app.site_codes.legacy_button.winfo_viewable())
                     with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work'):
-                        app.main_button.invoke()
+                        app.site_codes.legacy_button.invoke()
                     assert app.pairing is not None
                     self.assertTrue(app.pairing.browser)
                     self.assertEqual(app.pairing.scope, 'gamelogs:write')
@@ -147,7 +150,7 @@ class NativeSingleSmoke(unittest.TestCase):
                     snap = Snapshot(queue.batch()); snap.accepted = [e['id'] for e in snap.events]
                     app.results.put(('upload', (snap, 'synthetic ACK'), None))
                     app.network_tick()
-                    self.assertIn('наблюдения', app.dashboard.heading.cget('text'))
+                    self.assertIn('наблюдения', app.dashboard.notice.cget('text'))
                     self.assertEqual([w.cget('text') for w in app.dashboard.metrics], ['2','1','1'])
                     evidence(window, 'one-stream-failure')
                     app.expanded.uploader.failures = 0
@@ -164,7 +167,7 @@ class NativeSingleSmoke(unittest.TestCase):
                     app.expanded.tick()
                     self.assertFalse(app.expanded.problem)
                     app.dashboard.refresh()
-                    self.assertIn('наблюдения', app.dashboard.heading.cget('text'))
+                    self.assertIn('наблюдения', app.dashboard.notice.cget('text'))
                     app.main_button.invoke()
                     self.assertIsNone(app.tailer)
                     self.assertIsNone(app.expanded.tailer)

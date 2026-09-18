@@ -59,6 +59,7 @@ class NativeGuiSmoke(unittest.TestCase):
                 socket.socket, 'connect', side_effect=AssertionError('Network forbidden in smoke test')
             ), patch('collector.connection_status.probe', return_value=None):
                 window = tk.Tk()
+                app = None
                 callback_errors = []
                 window.report_callback_exception = lambda *args: callback_errors.append(args)
                 try:
@@ -94,7 +95,8 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertEqual(app.expanded.queue.count(), 0)
                     self.assertFalse(app.expanded.start_button.winfo_viewable())
                     self.assertFalse(app.settings.winfo_viewable())
-                    self.assertTrue(app.main_button.winfo_viewable())
+                    self.assertFalse(app.main_button.winfo_viewable())
+                    self.assertTrue(app.site_codes.frame.winfo_viewable())
                     self.assertEqual(app.expanded.approve_button.cget('text'), 'Разрешить наблюдения')
                     with patch('collector.expanded_gui.messagebox.askyesno', return_value=False), patch.object(app.expanded, 'work') as work:
                         app.expanded.approve_button.invoke()
@@ -172,6 +174,8 @@ class NativeGuiSmoke(unittest.TestCase):
                     identity = app.identity.cget('text')
                     ack = app.last_ack.cget('text')
                     self.assertTrue(app.identity.winfo_viewable())
+                    self.assertTrue(app.main_button.winfo_viewable())
+                    self.assertFalse(app.site_codes.frame.winfo_viewable())
                     self.assertTrue(app.pair_button.instate(['disabled']))
                     self.assertFalse(app.code_frame.winfo_ismapped())
                     self.assertFalse(app.upload_enabled)
@@ -188,7 +192,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     app.results.put(('upload', (snapshot, 'Сервер подтвердил сохранение: 1 событий.'), None))
                     app.network_tick()
                     confirmed = app.last_ack.cget('text')
-                    self.assertIn('Боевые: последнее подтверждение', confirmed)
+                    self.assertIn('Последнее подтверждение сервера', confirmed)
                     self.assertEqual(app.dashboard.confirmed, 1)
                     app.network_tick()
                     self.assertEqual(app.last_ack.cget('text'), confirmed)
@@ -246,6 +250,9 @@ class NativeGuiSmoke(unittest.TestCase):
                         queue.count()
                     self.assertEqual(callback_errors, [])
                 finally:
+                    if app is not None:
+                        app.expanded.close()
+                        app.legacy.close()
                     try:
                         window.destroy()
                     except tk.TclError:

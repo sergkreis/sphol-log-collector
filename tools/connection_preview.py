@@ -55,16 +55,16 @@ def render(destination=None):
                     colors = {'connected': '#80d8a0', 'offline': '#ef8791', 'denied': '#ef8791', 'checking': '#e8be75'}
                     assert str(app.connection_badge.cget('foreground')) == colors.get(expected, '#bcc5d3')
                     if scene == 'connected-no-events':
-                        assert app.last_ack.cget('text') == 'Новых событий пока нет'
+                        assert app.last_ack.cget('text') == 'Подтверждений сервера за этот запуск пока нет'
                         assert app.dashboard.ack_at is None
                     if scene == 'one-stream-failure':
-                        assert 'не отправляются: наблюдения' in app.dashboard.heading.cget('text')
+                        assert 'Не отправляются: наблюдения' in app.dashboard.notice.cget('text')
                     app.dashboard.acknowledge(['synthetic-ack'])
                     ack = app.dashboard.ack_at
                     app.refresh_controls(); app.dashboard.refresh()
                     assert app.dashboard.ack_at == ack
                     if scene == 'one-stream-failure':
-                        assert 'не отправляются: наблюдения' in app.dashboard.heading.cget('text')
+                        assert 'Не отправляются: наблюдения' in app.dashboard.notice.cget('text')
                     # Restore zero-event screenshot; no fabricated production ACK.
                     app.dashboard.ack_at = None; app.dashboard.confirmed = 0
                     app.dashboard.refresh(); app.expanded.refresh_summary()
