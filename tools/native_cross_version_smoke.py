@@ -16,11 +16,11 @@ import sqlite3
 from collector.credentials import CredentialStore
 from collector.updater import ASSET, clean_env, download
 
-# Published v0.3.6, source 9182dac2bd320616a0b3bfbfb5f95cadf61ec160.
-# PendingQueue AST is identical to the retained released_v035_queue fixture.
-# Digest verified against live GitHub release asset metadata.
-OLD_VERSION = '0.3.6'
-OLD_SHA = '89d04fe5524c9ad38d043307decc26b0f294d222c99ed007a4c2b7201fec3020'
+# Published v0.3.7; EXE downloaded and SHA256SUMS/SOURCE-COMMIT read back.
+# PendingQueue AST must match the retained released_v035_queue fixture.
+OLD_SOURCE_COMMIT = '225b54d5ef9ece61f35c4f3d89d7de985764d016'
+OLD_VERSION = '0.3.7'
+OLD_SHA = '341036766c1b775bfb456cbce9d663a956b6ac75df4b010c0d2d3ac1b4f8b00e'
 
 
 from contextlib import contextmanager
@@ -118,7 +118,12 @@ def queue_rows(path, *, migrated):
 def main():
     assert os.name == 'nt', 'Windows required'
     replacement = Path(sys.argv[1]).absolute().read_bytes()
-    old = download(f'https://github.com/sergkreis/sphol-log-collector/releases/download/v{OLD_VERSION}/' + ASSET, 128 * 1024 * 1024)
+    base = f'https://github.com/sergkreis/sphol-log-collector/releases/download/v{OLD_VERSION}/'
+    receipt = download(base + 'SOURCE-COMMIT.txt', 4096).decode('utf-8-sig').strip()
+    assert receipt == OLD_SOURCE_COMMIT, 'Released source receipt mismatch'
+    sums = download(base + 'SHA256SUMS.txt', 4096).decode('utf-8-sig').split()
+    assert sums == [OLD_SHA, ASSET], 'Released checksum manifest mismatch'
+    old = download(base + ASSET, 128 * 1024 * 1024)
     assert hashlib.sha256(old).hexdigest() == OLD_SHA
     # Firewall program filters reject Windows 8.3 TEMP aliases (RUNNER~1).
     # A private directory under the checkout has a canonical long path.

@@ -1,0 +1,1 @@
+from tools.native_fault_smoke import NativeFaultSmoke

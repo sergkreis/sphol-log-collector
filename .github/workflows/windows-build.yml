@@ -39,6 +39,8 @@ jobs:
           if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
           if (-not (Select-String -Path $report -Pattern '^test_compact_binding_capture_settings_and_callbacks .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen compact UI gate' }
           if (-not (Select-String -Path $report -Pattern '^test_unresolved_sources_do_not_starve_live_file .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen recovery isolation gate' }
+          if (-not (Select-String -Path $report -Pattern '^test_multi_recovery_queuefull_commit_fault_reopen .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen combined recovery fault gate' }
+          if (-not (Select-String -Path $report -Pattern '^test_tk_fault_pending_ack_green_and_reopen .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen actual Tk fault ACK gate' }
           if (-not (Select-String -Path $report -Pattern '^test_callback_fault_fails_closed .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen scheduler fault gate' }
           if (-not (Select-String -Path $report -Pattern '^test_visible_retry_consent_expiry_stale_and_copy .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen pairing real-button gate' }
           if (-not (Select-String -Path $report -Pattern '^test_late_redemption_waits_and_requires_explicit_resume .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen late-token storage gate' }
@@ -49,7 +51,7 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
         run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
-      - name: Pinned released v0.3.6 to real new collector replacement and DPAPI preservation (egress blocked)
+      - name: Pinned released v0.3.7 to real new collector replacement and DPAPI preservation (egress blocked)
         shell: pwsh
         run: |
           python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe 2>&1 | Tee-Object smoke-reports/cross-version.txt
