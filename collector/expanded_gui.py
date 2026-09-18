@@ -49,6 +49,7 @@ class ExpandedControls:
         self.last_ack.pack(anchor='w')
         if app.uploader and app.uploader.credentials['scope'] == SCOPE:
             self.bind(app.uploader.credentials)
+        self.result_tick()
         self.tick()
 
     def bind(self, credentials):
@@ -121,8 +122,23 @@ class ExpandedControls:
 
     from .poll_scheduler import scheduled_poll
 
-    @scheduled_poll
-    def tick(self):
+    def result_tick(self):
+        """Own one Tk callback, independent of fail-closed capture polling."""
+        if self.closed or getattr(self, '_result_running', False):
+            return
+        self._result_running = True
+        previous = getattr(self, '_result_after', None)
+        self._result_after = None
+        try:
+            if previous is not None:
+                self.app.window.after_cancel(previous)
+            self.drain_result()
+        finally:
+            self._result_running = False
+            if not self.closed:
+                self._result_after = self.app.window.after(100, self.result_tick)
+
+    def drain_result(self):
         if self.closed:
             return
         try:
@@ -161,8 +177,12 @@ class ExpandedControls:
                 except Exception:
                     self.problem = True
                     self.enabled = False
-                    snapshot.accepted = []
-                    status = 'Не удалось сохранить подтверждение на диск. Очередь сохранена.'
+                    # Retain the validated result and ownership until SQLite
+                    # commits; retry locally, never send another HTTP request.
+                    self.busy = True
+                    self.results.put((kind, result, failed))
+                    self.status.config(text='Не удалось сохранить подтверждение на диск. Очередь сохранена.')
+                    return
                 else:
                     if snapshot.accepted:
                         from .diagnostics import emit
@@ -176,6 +196,10 @@ class ExpandedControls:
                     self.status.config(text=status)
                 if self.uploader.paused:
                     self.enabled = False
+
+    @scheduled_poll
+    def tick(self):
+        self.drain_result()
         if self.pairing and time.monotonic() >= self.pairing.deadline and self.code.get():
             self.code.set('')
             self.pairing = None
@@ -222,7 +246,14 @@ class ExpandedControls:
         refresh(self.app)
 
     def close(self):
+        if self.closed:
+            return
         self.closed = True
+        for name in ('_result_after', '_poll_after'):
+            callback = getattr(self, name, None)
+            if callback is not None:
+                self.app.window.after_cancel(callback)
+                setattr(self, name, None)
         self.enabled = False
         if self.tailer:
             self.tailer.stop()

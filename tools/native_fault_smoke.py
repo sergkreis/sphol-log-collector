@@ -50,10 +50,13 @@ class NativeFaultSmoke(unittest.TestCase):
                         snapshot = Snapshot(q.batch(), q)
                         snapshot.accepted = [before[0][0]]
                         target.busy = True
-                        # Expanded owns ACK consumption in the capture callback;
-                        # main ACK arrives after the capture callback has failed.
-                        if stream == 'expanded':
-                            target.results.put(('upload', (snapshot, 'Synthetic ACK'), None))
+                        import threading
+                        release = threading.Event()
+                        def delayed_ack():
+                            if release.wait(3):
+                                target.results.put(('upload', (snapshot, 'Synthetic ACK'), None))
+                        worker = threading.Thread(target=delayed_ack)
+                        worker.start()
                         fault = patch('collector.dashboard.refresh', side_effect=RuntimeError('synthetic callback')) if stream == 'main' else patch.object(target, 'refresh_summary', side_effect=RuntimeError('synthetic callback'))
                         with fault:
                             window.after(0, target.tick)
@@ -62,13 +65,36 @@ class NativeFaultSmoke(unittest.TestCase):
                         self.assertTrue(getattr(target, '_poll_failed', False))
                         self.assertIsNone(target.tailer)
                         self.assertTrue(target.capture_problem)
-                        if stream == 'main':
+                        if stream in ('main', 'expanded'):
                             self.assertTrue(target.busy)
-                            import threading
-                            worker = threading.Thread(target=lambda: target.results.put(('upload', (snapshot, 'Synthetic ACK'), None)))
-                            worker.start()
+                            release.set()
                             worker.join(timeout=1)
                             self.assertFalse(worker.is_alive())
+                            if stream == 'expanded':
+                                import sqlite3
+                                owner = threading.get_ident()
+                                original = q.complete_upload
+                                calls = []
+                                def complete(*args):
+                                    self.assertEqual(threading.get_ident(), owner)
+                                    calls.append(args)
+                                    return original(*args)
+                                with patch.object(q, 'complete_upload', side_effect=sqlite3.OperationalError('synthetic disk fault')):
+                                    target.result_tick()
+                                    first = target._result_after
+                                    target.result_tick()
+                                    self.assertNotIn(first, window.tk.call('after', 'info'))
+                                    self.assertTrue(target.busy)
+                                    self.assertEqual(q.db.execute('SELECT id,payload,size FROM pending ORDER BY rowid').fetchall(), before)
+                                    self.assertEqual(snapshot.accepted, [before[0][0]])
+                                with patch.object(q, 'complete_upload', side_effect=complete), patch.object(target, 'work', side_effect=AssertionError('No new uploads')):
+                                    # Only the independently scheduled Tk callback
+                                    # can commit the delayed ACK after disk recovery.
+                                    window.after(230, window.quit)
+                                    window.mainloop()
+                                self.assertEqual(len(calls), 1)
+                                self.assertFalse(target.enabled)
+                                self.assertIsNone(target.tailer)
                             window.after(0, app.network_tick)
                             window.after(30, window.quit)
                             window.mainloop()
@@ -89,9 +115,17 @@ class NativeFaultSmoke(unittest.TestCase):
                         path = q.path
                     finally:
                         if app:
-                            app.expanded.queue.close()
+                            app.expanded.close()
+                            app.expanded.close()
+                            # A worker completing after close may enqueue only;
+                            # no callback may touch the closed SQLite connection.
+                            app.expanded.results.put(('upload', (snapshot, 'Synthetic late close ACK'), None))
+                            app.expanded.result_tick()
+                            self.assertIsNone(app.expanded._result_after)
                             if getattr(app, 'legacy', None):
                                 app.legacy.queue.close()
+                        for callback in window.tk.call('after', 'info'):
+                            window.after_cancel(callback)
                         window.destroy()
                 with closing(PendingQueue(path)) as reopened:
                     self.assertEqual(reopened.db.execute('SELECT id,payload,size FROM pending ORDER BY rowid').fetchall(), before[1:])
