@@ -61,7 +61,7 @@ class Dashboard:
         for label, value in zip(self.metrics, (collected, confirmed, eligible)):
             label.config(text=f'{value:,}'.replace(',', ' '))
         status = app.status.get()
-        if 'ошибк' in status or 'проверьте' in status:
+        if getattr(app, 'capture_problem', False) or 'ошибк' in status.lower() or 'проверьте' in status:
             heading = 'Не удалось читать журналы'
         elif 'приостановлен' in status:
             heading = 'Сбор приостановлен'

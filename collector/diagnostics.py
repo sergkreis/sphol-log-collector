@@ -18,7 +18,7 @@ import time
 LIMIT = 256 * 1024
 MAX_EVENTS = 800
 EVENTS = frozenset(('app.start', 'app.close', 'app.init', 'gamelogs.inspect',
-    'capture.start', 'capture.poll', 'capture.stop', 'logs.open', 'logs.paths',
+    'capture.start', 'capture.poll', 'capture.stop', 'capture.scheduler', 'capture.state', 'logs.open', 'logs.paths',
     'pair.start', 'pair.poll', 'pair.redeem', 'pair.browser', 'pair.wait', 'pair.failed',
     'credential.load', 'credential.save', 'upload.send', 'upload.ack',
     'upload.retry', 'http.response', 'export', 'http.connect_tls', 'http.headers', 'http.read', 'http.complete',
@@ -37,7 +37,7 @@ CLASSES = frozenset(('PermissionError', 'FileNotFoundError', 'NotADirectoryError
     'HTTPFailure', 'SiteCodeFailure', 'QueueFull', 'ReadFailure', 'HTTPException'))
 NUMBERS = frozenset(('errno', 'winerror', 'status', 'count', 'accepted', 'rejected',
     'failures', 'delay', 'exists', 'accessible', 'unattributed', 'windows_major',
-    'windows_minor', 'windows_build', 'duration_ms', 'correlation'))
+    'windows_minor', 'windows_build', 'duration_ms', 'correlation', 'recovery', 'sources', 'stream'))
 _sink = None
 
 

@@ -189,6 +189,8 @@ class ConnectedApp(PairingUX, App):
         self.work('pair', self.pairing.start)
 
     def start(self):
+        if getattr(self, '_poll_failed', False):
+            return
         if blocked(self):
             return
         if active_url(self.pairing):

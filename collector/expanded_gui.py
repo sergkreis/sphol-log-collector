@@ -86,6 +86,8 @@ class ExpandedControls:
         self.work('pair', self.pairing.start)
 
     def start(self, integrated=False):
+        if getattr(self, '_poll_failed', False):
+            return
         if self.busy or self.pairing or self.tailer:
             return
         if not self.uploader or self.uploader.paused:
@@ -117,6 +119,9 @@ class ExpandedControls:
             self.stop()
             self.queue.clear()
 
+    from .poll_scheduler import scheduled_poll
+
+    @scheduled_poll
     def tick(self):
         if self.closed:
             return
@@ -201,7 +206,7 @@ class ExpandedControls:
             self.code_field.pack_forget()
         self.approve_button.config(state='disabled' if self.busy or self.pairing or self.tailer else 'normal')
         self.start_button.config(state='disabled' if self.busy or self.pairing or self.tailer else 'normal')
-        self.app.window.after(1000, self.tick)
+
 
     def refresh_summary(self):
         from .queue_status import queue_counts

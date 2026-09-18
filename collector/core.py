@@ -12,7 +12,7 @@ import re
 import sqlite3
 import stat
 import uuid
-from .diagnostics import observed
+from .diagnostics import observed, emit
 
 
 class ReadFailure(OSError):
@@ -337,8 +337,11 @@ class Tailer:
                     s = os.fstat(f.fileno())
                     key = (s.st_dev, s.st_ino)
                     seen.add(key)
-                    if self.recovery and key not in self.recovery:
-                        continue
+                    # Recovery is source-local: another unresolved header must
+                    # not block this source's newly consented bytes. Existing
+                    # sources already have a fresh Start EOF baseline; recovery
+                    # sources retain their old ceiling below and transition via
+                    # _poll to that baseline, never through the downtime gap.
                     if key in self.files:
                         pending = self.observed.get(key, 0) > self.files[key][0]
                         fp = self.fingerprints[key]
@@ -388,6 +391,9 @@ class Tailer:
                 self._checkpoint(ceilings)
             if full is not None:
                 raise full
+            self.poll_ticks = getattr(self, 'poll_ticks', 0) + 1
+            if self.poll_ticks % 30 == 1 or result:
+                emit('capture.state', count=result, recovery=len(self.recovery), sources=len(self.files), stream=1 if self.parser is parse_line else 2)
             return result
         except QueueFull:
             raise  # Successfully committed prefix and its cursor remain valid.

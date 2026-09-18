@@ -38,6 +38,8 @@ jobs:
           if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Frozen smoke failed' }
           if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
           if (-not (Select-String -Path $report -Pattern '^test_compact_binding_capture_settings_and_callbacks .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen compact UI gate' }
+          if (-not (Select-String -Path $report -Pattern '^test_unresolved_sources_do_not_starve_live_file .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen recovery isolation gate' }
+          if (-not (Select-String -Path $report -Pattern '^test_callback_fault_fails_closed .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen scheduler fault gate' }
           if (-not (Select-String -Path $report -Pattern '^test_visible_retry_consent_expiry_stale_and_copy .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen pairing real-button gate' }
           if (-not (Select-String -Path $report -Pattern '^test_late_redemption_waits_and_requires_explicit_resume .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen late-token storage gate' }
           if (-not (Select-String -Path $report -Pattern '^test_site_code_button_dpapi_and_lost_response .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen site-code DPAPI button gate' }

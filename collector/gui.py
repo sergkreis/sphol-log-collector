@@ -215,6 +215,8 @@ class App:
             self.updates.refresh_button()
 
     def start(self):
+        if getattr(self, '_poll_failed', False):
+            return
         if self.tailer is not None:
             return
         try:
@@ -242,6 +244,9 @@ class App:
             self.queue.clear()
             self.pending.set('В очереди на компьютере: 0 событий')
 
+    from .poll_scheduler import scheduled_poll
+
+    @scheduled_poll
     def tick(self):
         if getattr(self, 'local_capture', None):
             try:
@@ -273,7 +278,7 @@ class App:
             self.pending.set(queue_summary(self.queue, listeners))
         from .dashboard import refresh
         refresh(self)
-        self.window.after(1000, self.tick)
+
 
     def close(self):
         if self.queue.count() and not messagebox.askyesno('Есть неотправленные события', 'Сохранить очередь на диске и выйти? Эти события ещё не отправлены. Фоновый процесс не останется.'):

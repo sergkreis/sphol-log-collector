@@ -11,10 +11,12 @@ if __name__ == "__main__":
         from tools.native_pairing_smoke import RecoveryTk
         from tools.native_site_code_smoke import NativeSiteCodeSmoke
         from tools.native_compact_smoke import NativeCompactSmoke
+        from tools.native_recovery_smoke import RecoveryIsolation
+        from tools.native_scheduler_smoke import SchedulerTests
         with open(sys.argv[2], 'w', encoding='utf-8') as report:
             result = unittest.TextTestRunner(stream=report, verbosity=2).run(
                 unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(case)
-                                   for case in (NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke, RecoveryTk, NativeSiteCodeSmoke, NativeCompactSmoke)))
+                                   for case in (NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke, RecoveryTk, NativeSiteCodeSmoke, NativeCompactSmoke, RecoveryIsolation, SchedulerTests)))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     if len(sys.argv) == 6 and sys.argv[1] == '--apply-update':
         from collector.updater import helper
