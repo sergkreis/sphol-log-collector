@@ -35,7 +35,7 @@ class NativeSiteCodeSmoke(unittest.TestCase):
             release = threading.Event()
             requests = []
             credential = {'access_token':'SYNTHETIC_'*8, 'token_type':'Bearer',
-                'scope':'gamelogs:write', 'installation_id':'a'*32,
+                'scope':'combat:write', 'installation_id':'a'*32,
                 'characters':[{'id':42,'name':'Synthetic Pilot'}],
                 'expires_at':'2099-01-01T00:00:00Z'}
             class Transport:
@@ -53,7 +53,7 @@ class NativeSiteCodeSmoke(unittest.TestCase):
                 self.assertTrue(control.busy)
                 saved = PendingStore(control.pending.path).load()
                 assert saved is not None
-                self.assertEqual(saved['scope'], 'gamelogs:write')
+                self.assertEqual(saved['scope'], 'combat:write')
                 self.assertNotIn(code.encode(), control.pending.path.read_bytes())
                 self.assertNotIn(saved['verifier'].encode(), control.pending.path.read_bytes())
                 release.set()
