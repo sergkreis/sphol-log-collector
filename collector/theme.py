@@ -6,7 +6,7 @@ BG = '#202226'
 FG = '#f0f1f2'
 MUTED = '#b8bec7'
 SURFACE = '#2d3036'
-ACCENT = '#b9d5c7'
+ACCENT = '#d4dae2'
 
 
 def apply_theme(window):
@@ -27,7 +27,7 @@ def apply_theme(window):
     style.configure('TButton', background=SURFACE, foreground=FG, padding=(14, 9), borderwidth=1, focuscolor=ACCENT)
     style.map('TButton', background=[('active', '#41464e'), ('pressed', '#363b42')], foreground=[('disabled', '#89909a')])
     style.configure('Primary.TButton', background=ACCENT, foreground=BG, font=(font[0], 11, 'bold'), padding=(20, 12))
-    style.map('Primary.TButton', background=[('active', '#d0e6dc'), ('pressed', '#9dbbad')], foreground=[('disabled', '#66736d')])
+    style.map('Primary.TButton', background=[('active', '#edf0f4'), ('pressed', '#b9c3cf')], foreground=[('disabled', '#66736d')])
     style.configure('TCheckbutton', background=BG, foreground=FG, padding=(0, 6))
     style.map('TCheckbutton', background=[('active', BG)])
     style.configure('TEntry', fieldbackground=SURFACE, foreground=FG, insertcolor=FG, padding=6)

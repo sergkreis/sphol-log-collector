@@ -38,8 +38,8 @@ class App:
         from .theme import apply_theme
         apply_theme(window)
         window.title('SPHOL — боевые журналы')
-        window.minsize(760, 660)
-        window.geometry('780x700')
+        window.minsize(560, 440)
+        window.geometry('560x440')
         self.status = tk.StringVar(value='Сбор выключен — новые события не читаются.')
         self.pending = tk.StringVar()
         # Keep horizontal breathing room without spending short-screen height.
@@ -48,7 +48,6 @@ class App:
         self.header = ttk.Frame(frame)
         self.header.pack(fill='x')
         ttk.Label(self.header, text='SPHOL', style='Title.TLabel').pack(side='left')
-        ttk.Label(self.header, text='БОЕВЫЕ ЖУРНАЛЫ', style='Muted.TLabel').pack(side='left', padx=16)
         self.identity_area = ttk.Frame(frame)
         self.identity_area.pack(fill='x', pady=(8, 8))
         capture = ttk.Frame(frame)
@@ -58,7 +57,7 @@ class App:
         # Detailed queue breakdown lives in the collapsed diagnostics.
         buttons = ttk.Frame(capture)
         self.capture_buttons = buttons
-        buttons.pack(anchor='w', pady=(12, 0))
+        buttons.pack(anchor='center', pady=(16, 12))
         self.start_button = ttk.Button(buttons, text='Начать сбор', command=self.start)
         self.start_button.pack(side='left')
         self.stop_button = ttk.Button(buttons, text='Остановить сбор и отправку', command=self.stop, state='disabled')
@@ -67,7 +66,8 @@ class App:
         self.main_button.pack(side='left')
         self.network_area = ttk.Frame(frame)
         self.network_area.pack(fill='x', pady=(8, 4))
-        self.settings_button = ttk.Button(frame, text='Настройки и диагностика ▸', command=self.toggle_settings)
+        self.footer = ttk.Frame(self.frame)
+        self.settings_button = ttk.Button(self.footer, text='Настройки', command=self.toggle_settings)
         self.settings_button.pack(anchor='w', pady=(8, 0))
         self.settings_host = ttk.Frame(frame)
         self.settings_canvas = tk.Canvas(self.settings_host, height=190, highlightthickness=0, background='#171b20')
@@ -78,14 +78,22 @@ class App:
         self.settings = ttk.Frame(self.settings_canvas)
         settings_item = self.settings_canvas.create_window((0, 0), window=self.settings, anchor='nw')
         self.settings.bind('<Configure>', lambda e: self.settings_canvas.configure(scrollregion=self.settings_canvas.bbox('all')))
-        self.settings_canvas.bind('<Configure>', lambda e: self.settings_canvas.itemconfigure(settings_item, width=e.width))
+        def resize_settings(event):
+            self.settings_canvas.itemconfigure(settings_item, width=event.width)
+            def wrap(parent):
+                for child in parent.winfo_children():
+                    if isinstance(child, ttk.Label) and child.cget('wraplength'):
+                        child.configure(wraplength=max(200, event.width - 12))
+                    wrap(child)
+            wrap(self.settings)
+        self.settings_canvas.bind('<Configure>', resize_settings)
         window.bind('<MouseWheel>', lambda e: self.settings_canvas.yview_scroll(-1 if e.delta > 0 else 1, 'units') if self.settings_open else None)
         window.bind('<Button-4>', lambda e: self.settings_canvas.yview_scroll(-1, 'units') if self.settings_open else None)
         window.bind('<Button-5>', lambda e: self.settings_canvas.yview_scroll(1, 'units') if self.settings_open else None)
         self.settings_open = False
         self.danger_area = ttk.Frame(self.settings)
         self.danger_area.pack(fill='x', pady=12)
-        ttk.Button(self.danger_area, text='Удалить очередь…', command=self.clear).pack(side='left', padx=(0, 8))
+        ttk.Button(self.danger_area, text='Удалить очередь…', command=self.clear).pack(anchor='w', pady=4)
         capture = self.settings
         ttk.Label(capture, text='Полная локальная запись · никогда не отправляется', style='Muted.TLabel').pack(anchor='w', pady=8)
         self.local_enabled = tk.BooleanVar(value=False)
@@ -101,18 +109,16 @@ class App:
         ttk.Label(frame, text='Только новые боевые строки. Без чатов, памяти игры, паролей и фоновой службы. Отправка — только по вашему разрешению.', wraplength=620).pack(anchor='w')
         from .dashboard import Dashboard
         self.dashboard = Dashboard(self, self.capture_area)
-        self.dashboard.heading.pack(before=self.capture_area.pack_slaves()[0], anchor='w', pady=(0, 8))
+        self.dashboard.heading.pack(before=self.capture_area.pack_slaves()[0], anchor='center', pady=(12, 6))
 
-        self.footer = ttk.Frame(self.frame)
         # Reserve footer height before top-packed content can consume it.
         self.footer.pack(side='bottom', fill='x', pady=(8, 0), before=self.header)
         # Recovery can be tall; keep diagnostics reachable before secondary
         # stream summaries consume the remaining vertical space.
-        self.settings_button.pack(side='bottom', anchor='w', pady=(8, 0), after=self.footer)
-        ttk.Separator(self.footer).pack(fill='x', pady=(0, 12))
-        self.support_button = ttk.Button(self.header, text='Сохранить отчёт для поддержки', command=self.export_support)
-        self.support_button.pack(side='right')
-        self.support_status = ttk.Label(self.footer, text='Диагностика хранится локально; игровые тексты и ключи не записываются.', wraplength=680)
+        self.settings_button.pack(in_=self.footer, side='left')
+        self.support_button = ttk.Button(self.settings, text='Сохранить отчёт для поддержки', command=self.export_support)
+        self.support_button.pack(anchor='w', before=self.danger_area, pady=8)
+        self.support_status = ttk.Label(self.settings, text='Диагностика хранится локально; игровые тексты и ключи не записываются.', wraplength=680)
         window.protocol('WM_DELETE_WINDOW', self.close)
         self.tick()
 
@@ -138,7 +144,7 @@ class App:
 
     def toggle_settings(self):
         self.settings_open = not self.settings_open
-        self.settings_button.config(text='Настройки и диагностика ▾' if self.settings_open else 'Настройки и диагностика ▸')
+        self.settings_button.config(text='Назад' if self.settings_open else 'Настройки')
         if self.settings_open:
             self.capture_area.pack_forget()
             self.network_area.pack_forget()
@@ -148,12 +154,21 @@ class App:
             self.capture_area.pack(fill='x', after=self.identity_area)
             self.network_area.pack(fill='x', pady=(8, 4), after=self.capture_area)
         self.window.update_idletasks()
-        self.window.geometry('780x750' if self.settings_open else '780x700')
+        self.window.geometry('680x620' if self.settings_open else '560x440')
+        if hasattr(self, 'site_codes'):
+            self.site_codes.refresh()
 
     def toggle_capture(self):
         if self.stop_button.instate(['!disabled']):
             self.stop()
         else:
+            codes = getattr(self, 'site_codes', None)
+            if codes and not self.uploader and not self.pairing:
+                codes.refresh()
+                if not codes.uncertain:
+                    codes.label.config(text='Вставьте код с сайта, затем нажмите «Привязать». Сбор выключен.')
+                    codes.entry.focus_set()
+                return
             self.start()
 
     def toggle_local(self):
@@ -193,7 +208,7 @@ class App:
         expanded = getattr(self, 'expanded', None)
         self.stop_button.config(state='normal' if self.tailer or getattr(self, 'local_capture', None) or getattr(self, 'upload_enabled', False) or (expanded and (expanded.enabled or expanded.tailer)) else 'disabled')
         if hasattr(self, 'main_button'):
-            self.main_button.config(text='Остановить сбор и отправку' if self.stop_button.instate(['!disabled']) else 'Начать сбор')
+            self.main_button.config(text='Остановить сбор' if self.stop_button.instate(['!disabled']) else 'Начать сбор')
         from .dashboard import refresh
         refresh(self)
         if hasattr(self, 'updates'):

@@ -31,7 +31,7 @@ class SiteTests(unittest.TestCase):
             self.skipTest('Native Tk display unavailable')
         try:
             with tempfile.TemporaryDirectory() as d, patch.object(root, 'after'), patch('collector.site_code_gui.threading.Thread'):
-                app = Mock(window=root, network_area=root, store=Memory(), busy=False, pairing=None,
+                app = Mock(window=root, network_area=root, settings=root, store=Memory(), busy=False, pairing=None,
                            tailer=None, uploader=None, recovered_token=None, updates=None)
                 app.queue.path = Path(d)/'queue.sqlite3'
                 ui = SiteCodeControls(app)
@@ -41,7 +41,7 @@ class SiteTests(unittest.TestCase):
                 self.assertTrue(ui.busy)
                 self.assertTrue(ui.button.instate(['disabled']))
                 self.assertEqual(ui.code.get(), '')
-                ui.redemption.prepare.assert_called_once_with(CODE, 'combat:write')
+                ui.redemption.prepare.assert_called_once_with(CODE, 'gamelogs:write')
         finally:
             root.destroy()
             gc.collect()
@@ -147,7 +147,7 @@ class SiteTests(unittest.TestCase):
             ui.submit()
             self.assertTrue(ui.busy)
             self.assertTrue(ui.uncertain)
-            ui.redemption.prepare.assert_called_once_with(CODE, 'combat:write')
+            ui.redemption.prepare.assert_called_once_with(CODE, 'gamelogs:write')
             thread.return_value.start.assert_called_once()
             ui.submit()
             self.assertEqual(ui.redemption.prepare.call_count, 1)

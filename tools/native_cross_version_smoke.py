@@ -16,10 +16,11 @@ import sqlite3
 from collector.credentials import CredentialStore
 from collector.updater import ASSET, clean_env, download
 
-# Published v0.3.5, source 56c0a5ba92201b8ed087e7c881ae4bb08724327e.
+# Published v0.3.6, source 9182dac2bd320616a0b3bfbfb5f95cadf61ec160.
+# PendingQueue AST is identical to the retained released_v035_queue fixture.
 # Digest verified against live GitHub release asset metadata.
-OLD_VERSION = '0.3.5'
-OLD_SHA = 'f9c056be413a7dbdb7feb6d67afcd824fd942b32189db1c890b35b8d59e78831'
+OLD_VERSION = '0.3.6'
+OLD_SHA = '89d04fe5524c9ad38d043307decc26b0f294d222c99ed007a4c2b7201fec3020'
 
 
 from contextlib import contextmanager

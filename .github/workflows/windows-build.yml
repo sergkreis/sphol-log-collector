@@ -15,6 +15,7 @@ jobs:
         with:
           python-version: '3.11.9'
           architecture: x64
+      - run: python -m pip install --require-hashes --only-binary=":all:" -r requirements-build.txt
       - run: python -m unittest discover -s tests -v
       - name: Native Tk synthetic capture and shutdown smoke
         run: python -m tools.native_gui_smoke
@@ -36,6 +37,7 @@ jobs:
           if (Test-Path $report) { Get-Content $report }
           if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Frozen smoke failed' }
           if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
+          if (-not (Select-String -Path $report -Pattern '^test_compact_binding_capture_settings_and_callbacks .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen compact UI gate' }
           if (-not (Select-String -Path $report -Pattern '^test_visible_retry_consent_expiry_stale_and_copy .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen pairing real-button gate' }
           if (-not (Select-String -Path $report -Pattern '^test_late_redemption_waits_and_requires_explicit_resume .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen late-token storage gate' }
           if (-not (Select-String -Path $report -Pattern '^test_site_code_button_dpapi_and_lost_response .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen site-code DPAPI button gate' }
@@ -45,7 +47,7 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
         run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
-      - name: Pinned released v0.3.5 to real new collector replacement and DPAPI preservation (egress blocked)
+      - name: Pinned released v0.3.6 to real new collector replacement and DPAPI preservation (egress blocked)
         shell: pwsh
         run: |
           python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe 2>&1 | Tee-Object smoke-reports/cross-version.txt

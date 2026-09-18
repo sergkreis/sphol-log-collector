@@ -21,27 +21,37 @@ class SiteCodeControls:
         self.auto_retry = False
         self.results = queue.Queue()
         self.uncertain = self.pending.path.exists()
-        frame = ttk.Frame(app.network_area)
+        self.frame = frame = ttk.Frame(app.network_area)
         frame.pack(fill='x')
-        ttk.Label(frame, text='Ввести код с сайта').pack(anchor='w')
+        self.step = ttk.Label(frame, text='Привяжите персонажа', style='Status.TLabel')
+        self.step.pack(anchor='w', pady=(8, 12))
+        self.get_code_button = ttk.Button(frame, text='1   Получить код на сайте', command=self.review)
+        self.get_code_button.pack(anchor='w', pady=(0, 12))
+        self.entry_label = ttk.Label(frame, text='2   Вставьте код с сайта', style='Muted.TLabel')
+        self.entry_label.pack(anchor='w')
         self.code = StringVar(master=app.window)
-        self.entry = ttk.Entry(frame, textvariable=self.code, width=30)
+        row = ttk.Frame(frame)
+        row.pack(fill='x', pady=6)
+        self.entry = ttk.Entry(row, textvariable=self.code, width=30)
         self.entry.pack(side='left')
-        self.scope = StringVar(master=app.window, value='combat:write')
-        self.choice = ttk.Combobox(frame, textvariable=self.scope, values=('combat:write', 'gamelogs:write'), state='readonly', width=16)
-        self.choice.pack(side='left')
-        self.button = ttk.Button(frame, text='Привязать код / повторить', command=self.submit)
-        self.button.pack(side='left')
-        self.legacy_button = ttk.Button(app.network_area, text='Другой способ: подтверждение в браузере', command=app.pair)
-        self.legacy_button.pack(anchor='w')
-        self.review_button = ttk.Button(app.network_area, text='Проверить / отозвать устройства на сайте', command=self.review)
+        # New website codes have one supported consent; recovery keeps its saved scope.
+        self.scope = StringVar(master=app.window, value='gamelogs:write')
+        self.button = ttk.Button(row, text='Привязать', command=self.submit)
+        self.button.pack(side='left', padx=8)
+        self.links = ttk.Frame(frame)
+        self.links.pack(fill='x', pady=4)
+        self.legacy_button = ttk.Button(app.settings, text='Другой способ привязки: через браузер', command=app.pair)
+        self.legacy_button.pack_forget()
+        self.recovery_actions = ttk.Frame(frame)
+        self.recovery_actions.pack(fill='x')
+        self.review_button = ttk.Button(self.recovery_actions, text='Проверить устройства на сайте', command=self.review)
         self.review_button.pack(anchor='w')
-        self.abandon_button = ttk.Button(app.network_area, text='Завершить восстановление после проверки устройств', command=self.abandon)
+        self.abandon_button = ttk.Button(self.recovery_actions, text='Завершить восстановление…', command=self.abandon)
         self.abandon_button.pack(anchor='w')
-        self.label = ttk.Label(app.network_area, wraplength=680, text='Выберите то же разрешение, что на сайте. combat:write — бой; gamelogs:write — бой и три наблюдения. Сбор не включается.')
+        self.label = ttk.Label(frame, wraplength=510, text='Боевые события и обезличенные наблюдения.\nПривязка не включает сбор.')
         self.label.pack(anchor='w')
         if self.uncertain:
-            self.label.config(text='Есть незавершённая привязка. «Повторить» восстановит тот же запрос; новый код не используется. Устройство уже могло быть привязано: проверьте устройства на сайте.')
+            self.label.config(text='Привязка не завершена. Повторите сохранённый запрос или проверьте устройства на сайте. Новый код пока не нужен.')
             try:
                 saved = self.pending.load()
                 if saved:
@@ -106,7 +116,7 @@ class SiteCodeControls:
         self.auto_retry = False
         self.label.config(text='Сохраняем защищённый запрос и связываемся с SPHOL… Сбор выключен.')
         try:
-            self.redemption.prepare(self.code.get(), self.scope.get())
+            self.redemption.prepare(self.code.get(), self.scope.get() if self.uncertain else 'gamelogs:write')
         except Exception as exc:
             emit('site.pending.save', 'error', error=exc)
             self.uncertain = self.pending.path.exists()
@@ -129,7 +139,38 @@ class SiteCodeControls:
         self.button.config(state='disabled' if self.busy or time.monotonic() < self.next_try else 'normal')
         self.abandon_button.config(state='normal' if self.uncertain and not self.busy else 'disabled')
         self.entry.config(state='disabled' if self.uncertain else 'normal')
-        self.choice.config(state='disabled' if self.uncertain else 'readonly')
+        self.button.config(text='Повторить восстановление' if self.uncertain else 'Привязать')
+        if (self.app.uploader and not self.uncertain) or (hasattr(self.app, 'pairing_panel') and self.app.pairing_panel.winfo_manager() == 'pack'):
+            self.frame.pack_forget()
+        else:
+            self.frame.pack(fill='x', pady=(4, 0))
+        for widget in (self.review_button, self.abandon_button):
+            if self.uncertain:
+                widget.pack(anchor='w', pady=(4, 0))
+            else:
+                widget.pack_forget()
+        if self.uncertain:
+            self.step.config(text='Восстановление привязки')
+            self.get_code_button.pack_forget()
+            self.entry_label.pack_forget()
+            self.entry.pack_forget()
+            self.legacy_button.pack_forget()
+        else:
+            self.step.config(text='Привяжите персонажа')
+            self.get_code_button.pack(anchor='w', pady=(0, 12), after=self.step)
+            self.entry_label.pack(anchor='w', after=self.get_code_button)
+            self.entry.pack(side='left', before=self.button)
+            if hasattr(self.app, 'danger_area') and isinstance(self.app.danger_area, ttk.Frame):
+                self.legacy_button.pack(anchor='w', pady=8, before=self.app.danger_area)
+            else:
+                self.legacy_button.pack(anchor='w', pady=8)
+        # Onboarding replaces the capture view, never competes with Start.
+        if hasattr(self.app, 'capture_area') and not self.app.settings_open:
+            if not self.app.uploader or self.uncertain:
+                self.app.capture_area.pack_forget()
+            else:
+                self.app.capture_area.pack(fill='x', after=self.app.identity_area)
+
 
     def tick(self):
         try:

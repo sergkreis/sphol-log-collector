@@ -1,4 +1,6 @@
 # Build-only Windows x64 / Python 3.11 lock; runtime is standard library.
+pillow==11.1.0 \
+    --hash=sha256:fbd43429d0d7ed6533b25fc993861b8fd512c42d04514a0dd6337fb3ccf22761
 # Regenerate with uv pip compile --generate-hashes --python-platform x86_64-pc-windows-msvc.
 altgraph==0.17.4 \
     --hash=sha256:1b5afbb98f6c4dcadb2e2ae6ab9fa994bbb8c1d75f4fa96d340f9437ae454406 \

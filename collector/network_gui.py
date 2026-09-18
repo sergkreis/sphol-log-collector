@@ -42,8 +42,8 @@ class ConnectedApp(PairingUX, App):
         self.upload_problem = False
         self.store = CredentialStore(queue.path.parent / 'credentials.dpapi')
         super().__init__(window, log_root, queue)
-        self.identity = ttk.Label(self.identity_area, text='Персонаж не привязан', style='Title.TLabel', wraplength=620)
-        self.identity.pack(anchor='w')
+        self.identity = ttk.Label(self.header, text='Персонаж не привязан', wraplength=340)
+        self.identity.pack(side='right')
         from .connection_status import ConnectionStatus, LABELS
         self.connection_status = ConnectionStatus()
         self.connection_badge = ttk.Label(self.identity_area, text=LABELS['stopped'], wraplength=680)
@@ -53,8 +53,8 @@ class ConnectedApp(PairingUX, App):
 
         self.upload_state = ttk.Label(self.network_area, font=('Segoe UI', 10, 'bold'), wraplength=620)
 
-        self.last_ack = ttk.Label(self.network_area, text='Подтверждение сервера: в этом запуске ещё не получено.', wraplength=620)
-        self.last_ack.pack(anchor='w', pady=(6, 0))
+        self.last_ack = ttk.Label(self.capture_area, text='Подтверждений пока нет', wraplength=510, style='Small.TLabel')
+        self.last_ack.pack(anchor='center', pady=(8, 0))
         self.connection = ttk.Label(self.settings, text='Привяжите персонажа. «Начать сбор» включает сбор и отправку его боевых событий и разрешённых наблюдений на sphol.com.', wraplength=620)
         self.connection.pack(anchor='w', pady=(6, 8))
         self.code_frame = code_frame = ttk.Frame(self.network_area)
@@ -67,12 +67,12 @@ class ConnectedApp(PairingUX, App):
         self.copy_feedback = ttk.Label(code_frame, text='')
         self.copy_feedback.pack(side='left')
         buttons = ttk.Frame(self.network_area)
-        buttons.pack(anchor='w', pady=(8, 0))
+        # Legacy hidden action does not reserve empty main-screen space.
         self.pair_button = ttk.Button(buttons, text='Привязать персонажа…', command=self.pair)
         self.pair_button.pack_forget()
 
         self.unpair_button = ttk.Button(self.danger_area, text='Удалить привязку…', command=self.unpair)
-        self.unpair_button.pack(side='left')
+        self.unpair_button.pack(anchor='w', pady=4)
         try:
             credentials = self.store.load()
             if credentials:
@@ -90,12 +90,15 @@ class ConnectedApp(PairingUX, App):
         self.updates = UpdateControls(self)
         from .site_code_gui import SiteCodeControls
         self.site_codes = SiteCodeControls(self)
-        self.open_site = ttk.Button(self.footer, text='Открыть SPHOL', command=lambda: webbrowser.open(ORIGIN))
+        self.open_site = ttk.Button(self.footer, text='Открыть сайт', command=lambda: webbrowser.open(ORIGIN))
         self.open_site.pack(side='right')
         window.update_idletasks()
-        window.geometry('780x700')
+        window.geometry('560x440')
+        self.refresh_controls()
 
     def refresh_controls(self):
+        if hasattr(self, 'site_codes'):
+            self.site_codes.refresh()
         self.refresh_pairing_ux()
         if hasattr(self, 'connection_status'):
             from .connection_status import LABELS

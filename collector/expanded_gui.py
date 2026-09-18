@@ -17,9 +17,10 @@ class ExpandedControls:
         self.uploader = self.pairing = self.tailer = None
         self.busy = self.enabled = self.closed = False
         self.results = queue.Queue()
-        frame = ttk.Frame(app.network_area)
+        frame = ttk.Frame(app.settings)
         frame.pack(fill='x', pady=(8, 0))
         self.ack_count = 0
+        self.ack_at = None
         self.problem = self.capture_problem = False
         self.baseline = self.queue.inserted_count
         ttk.Label(frame, text='Боевые события + наблюдения', style='Muted.TLabel').pack(anchor='w')
@@ -43,7 +44,7 @@ class ExpandedControls:
         # Main capture button controls both approved streams.
         self.stop_button = ttk.Button(buttons, text='Остановить v2', command=self.stop)
         # Main stop always stops both streams.
-        ttk.Button(app.danger_area, text='Удалить очередь наблюдений…', command=self.clear).pack(side='left')
+        ttk.Button(app.danger_area, text='Удалить очередь наблюдений…', command=self.clear).pack(anchor='w', pady=4)
         self.last_ack = ttk.Label(app.settings, text='Наблюдения: подтверждения сервера ещё не было.', wraplength=620)
         self.last_ack.pack(anchor='w')
         if app.uploader and app.uploader.credentials['scope'] == SCOPE:
@@ -164,6 +165,7 @@ class ExpandedControls:
                 if snapshot.accepted:
                     self.problem = False
                     self.ack_count += len(snapshot.accepted)
+                    self.ack_at = time.monotonic()
                     self.last_ack.config(text=f'Сервер подтвердил наблюдения: {self.ack_count} за запуск · {time.strftime("%H:%M:%S")} (время компьютера)')
                 if status:
                     self.status.config(text=status)

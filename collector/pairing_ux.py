@@ -39,14 +39,14 @@ class PairingUX:
         self.pair_attempt = 0
         self.pair_job = None
         self.pairing_panel = ttk.Frame(self.identity_area)
-        self.pairing_message = ttk.Label(self.pairing_panel, wraplength=660, foreground='#e8be75')
+        self.pairing_message = ttk.Label(self.pairing_panel, wraplength=510, foreground='#e8be75')
         self.pairing_message.pack(anchor='w')
         actions = ttk.Frame(self.pairing_panel)
         actions.pack(anchor='w', pady=(4, 0))
         self.browser_button = ttk.Button(actions, text='Открыть подтверждение в браузере', command=self.open_pairing_browser)
-        self.browser_button.pack(side='left')
+        self.browser_button.pack(anchor='w')
         self.link_button = ttk.Button(actions, text='Скопировать ссылку', command=self.copy_pairing_link)
-        self.link_button.pack(side='left', padx=(8, 0))
+        self.link_button.pack(anchor='w', pady=(4, 0))
         self.retry_button = ttk.Button(self.pairing_panel, text='Повторить привязку', command=self.retry_pairing)
         self.retry_button.pack(anchor='w', pady=(4, 0))
 
@@ -54,6 +54,8 @@ class PairingUX:
         if hasattr(self, 'pairing_panel'):
             self.pairing_message.config(text=text)
             self.pairing_panel.pack(fill='x', pady=(6, 0))
+            if getattr(self, 'settings_open', False):
+                self.toggle_settings()
         else:
             self.connection.config(text=text)
 

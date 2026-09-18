@@ -92,13 +92,16 @@ class RecoveryTk(unittest.TestCase):
             with patch.object(w, 'after'):
                 app = ConnectedApp(w, logs, q)
                 try:
+                    app.settings_button.invoke()
+                    w.update()
+                    self.assertTrue(app.site_codes.legacy_button.winfo_viewable())
                     with patch('collector.network_gui.messagebox.askyesno', return_value=False), patch('collector.network_gui.Pairing') as pair:
-                        app.main_button.invoke()
+                        app.site_codes.legacy_button.invoke()
                         pair.assert_not_called()
                         self.assertFalse(app.resume_after_pair)
                         self.assertIsNone(app.tailer)
                     with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work') as work:
-                        app.main_button.invoke()
+                        app.site_codes.legacy_button.invoke()
                         work.assert_called_once()
                     app.busy = True
                     app.results.put(('pair', None, OSError('private details'), app.pair_attempt))
@@ -108,12 +111,12 @@ class RecoveryTk(unittest.TestCase):
                     self.assertFalse(app.settings_open)
                     self.assertIn('сеть', app.pairing_message.cget('text'))
                     self.assertNotIn('private', app.pairing_message.cget('text'))
-                    for width, height in ((780, 700), (760, 660)):
+                    for width, height in ((560, 440),):
                         w.geometry(f'{width}x{height}')
                         w.update()
                         for widget in (app.pairing_message, app.retry_button, app.browser_button,
-                                       app.link_button, app.main_button, app.settings_button,
-                                       app.footer, app.open_site, app.updates.button):
+                                       app.link_button, app.settings_button,
+                                       app.footer, app.open_site):
                             self.assertTrue(widget.winfo_ismapped(), f'{widget}: {width}x{height}')
                             self.assertGreaterEqual(widget.winfo_height(), widget.winfo_reqheight())
                             self.assertGreaterEqual(widget.winfo_width(), widget.winfo_reqwidth())

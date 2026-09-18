@@ -22,10 +22,10 @@ class UpdateControls:
     def __init__(self, app):
         self.app, self.busy = app, False
         self.results = queue.Queue()
-        self.label = ttk.Label(app.footer, text=f'Версия {VERSION} · обновления только вручную', wraplength=660, style='Muted.TLabel')
-        self.label.pack(anchor='w', pady=(0, 10))
-        self.button = ttk.Button(app.footer, text='Проверить обновление', command=self.check)
-        self.button.pack(side='left')
+        self.label = ttk.Label(app.settings, text=f'Версия {VERSION} · обновления только вручную', wraplength=660, style='Muted.TLabel')
+        self.label.pack(anchor='w', pady=(0, 10), before=app.support_button)
+        self.button = ttk.Button(app.settings, text='Проверить обновление', command=self.check)
+        self.button.pack(anchor='w', pady=(0, 10), before=app.support_button)
         if os.name != 'nt' or not getattr(sys, 'frozen', False):
             self.button.config(state='disabled')
             self.label.config(text=f'Версия {VERSION} · обновление доступно в Windows EXE')

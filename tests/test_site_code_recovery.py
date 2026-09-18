@@ -22,7 +22,7 @@ class RecoveryTests(unittest.TestCase):
         root = tk.Tk()
         self.addCleanup(gc.collect)
         self.addCleanup(root.destroy)
-        app = Mock(window=root, network_area=root, store=Memory(), busy=False,
+        app = Mock(window=root, network_area=root, settings=root, store=Memory(), busy=False,
                    pairing=None, tailer=None, uploader=None, recovered_token=None, updates=None)
         app.queue.path = Path(directory) / 'queue.sqlite3'
         with patch.object(root, 'after'):
