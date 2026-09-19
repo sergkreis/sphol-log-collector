@@ -3,20 +3,27 @@ import base64
 import hashlib
 import re
 import secrets
+import time
 from .credentials import crypt
+from .version import VERSION
 from .core import safe_open
 from .diagnostics import atomic
 from .transport import HTTPS, PAIR_URI, ProtocolError, encode, decode, validate_credentials
 
 
 def validate_claim(value):
-    if not isinstance(value, dict) or set(value) != {'device_secret', 'verifier', 'scope', 'recovery'}:
+    if not isinstance(value, dict) or set(value) not in ({'device_secret', 'verifier', 'scope', 'recovery'}, {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires'}):
         raise ProtocolError('Invalid browser recovery claim')
     if value['recovery'] is not True or value['scope'] not in ('combat:write', 'gamelogs:write'):
         raise ProtocolError('Invalid browser consent')
     for key in ('device_secret', 'verifier'):
         if not isinstance(value[key], str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', value[key]):
             raise ProtocolError('Invalid browser proof')
+    if 'browser_proof' in value:
+        if not isinstance(value['browser_proof'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', value['browser_proof']):
+            raise ProtocolError('Invalid approval proof')
+        if type(value['approval_expires']) not in (int, float) or not 0 < value['approval_expires'] < 1e12:
+            raise ProtocolError('Invalid approval expiry')
     return value
 
 
@@ -64,7 +71,7 @@ class BrowserRecovery:
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
         status, data = self.http.post('/api/collector/v1/pairings/browser', dict(
             challenge=challenge, challenge_method='S256', scope=scope, recovery=True,
-            client_version='0.3.9', device_label='SPHOL Windows collector'))
+            client_version=VERSION, device_label='SPHOL Windows collector'))
         if (status not in (200, 201) or not isinstance(data, dict)
                 or set(data) != {'device_secret', 'user_code', 'verification_uri', 'expires_in', 'interval'}
                 or data['verification_uri'] != PAIR_URI
@@ -72,7 +79,8 @@ class BrowserRecovery:
                 or type(data['expires_in']) is not int or not 1 <= data['expires_in'] <= 300
                 or type(data['interval']) is not int or not 1 <= data['interval'] <= 30):
             raise ProtocolError('Invalid browser response')
-        claim = validate_claim(dict(device_secret=data['device_secret'], verifier=verifier, scope=scope, recovery=True))
+        claim = validate_claim(dict(device_secret=data['device_secret'], verifier=verifier, scope=scope, recovery=True,
+                                    browser_proof=data['user_code'], approval_expires=time.time() + data['expires_in']))
         self.pending.save(claim)
         if self.pending.load() != claim:
             raise ProtocolError('Pending verification failed')
@@ -80,7 +88,8 @@ class BrowserRecovery:
 
     def redeem(self):
         payload = validate_claim(self.pending.load())
-        status, data = self.http.post('/api/collector/v1/pairings/token', payload)
+        wire = {k: payload[k] for k in ('device_secret', 'verifier', 'scope', 'recovery')}
+        status, data = self.http.post('/api/collector/v1/pairings/token', wire)
         if status == 400 and data in ({'error': 'authorization_pending'}, {'error': 'slow_down'}):
             return None
         if status != 200:

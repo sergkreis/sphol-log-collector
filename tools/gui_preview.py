@@ -75,10 +75,12 @@ def render(destination):
                     assert app.expanded.tailer is None
                     with patch('collector.update_gui.os.name', 'nt'), patch('collector.update_gui.sys.frozen', True, create=True):
                         app.updates.refresh_button()
-                        assert app.updates.button.instate(['disabled'])
-                        with patch('collector.update_gui.messagebox.showwarning') as warning:
+                        assert app.updates.button.instate(['!disabled'])
+                        with patch('collector.update_gui.threading.Thread') as worker:
                             app.updates.check()
-                            warning.assert_called_once()
+                            worker.assert_called_once()
+                        app.updates.results.put((None, None))
+                        app.updates.poll()
                     when = (datetime.now(timezone.utc) + timedelta(seconds=2)).strftime('%Y.%m.%d %H:%M:%S')
                     text = 'Listener: Synthetic Pilot\n-----\n'
                     text += ''.join(f'[ {when} ] (combat) Synthetic damage {i}\n' for i in range(12))

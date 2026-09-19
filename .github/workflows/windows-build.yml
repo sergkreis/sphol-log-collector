@@ -46,13 +46,14 @@ jobs:
           if (-not (Select-String -Path $report -Pattern '^test_late_redemption_waits_and_requires_explicit_resume .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen late-token storage gate' }
           if (-not (Select-String -Path $report -Pattern '^test_layout_independent_paste_event_route .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen Windows EN/RU Ctrl+V gate' }
           if (-not (Select-String -Path $report -Pattern '^test_site_code_button_dpapi_and_lost_response .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen site-code DPAPI button gate' }
+          if (-not (Select-String -Path $report -Pattern '^test_native_dpapi_separate_browser_proof .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen browser recovery DPAPI gate' }
       - name: Build isolated updater dummy (never collector state)
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummy tools/update_dummy.py
       - name: Build distinct replacement dummy
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
         run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
-      - name: Pinned released v0.3.8 to real new collector replacement and DPAPI preservation (egress blocked)
+      - name: Pinned released v0.3.9 to real new collector replacement and DPAPI preservation (egress blocked)
         shell: pwsh
         run: |
           python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe 2>&1 | Tee-Object smoke-reports/cross-version.txt

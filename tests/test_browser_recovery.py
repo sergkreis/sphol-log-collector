@@ -81,7 +81,7 @@ class BrowserTests(unittest.TestCase):
                     fixture.api = Collector(fixture.store.path)
                     self.assertEqual(BrowserRecovery(Disk(), store).redeem(), committed[0])
                     self.assertIsNone(pending.load())
-                    def retry(body): return fixture.request('pairings/token', body, auth=False, csrf=False)
+                    def retry(body): return fixture.request('pairings/token', {k: body[k] for k in ('device_secret', 'verifier', 'scope', 'recovery')}, auth=False, csrf=False)
                     self.assertEqual(retry(claim), (200, committed[0]))
                     self.assertEqual(retry(dict(claim, verifier='c'*43))[0], 409)
                     self.assertEqual(retry(dict(claim, scope='gamelogs:write'))[0], 403)

@@ -92,16 +92,15 @@ class RecoveryTk(unittest.TestCase):
             with patch.object(w, 'after'):
                 app = ConnectedApp(w, logs, q)
                 try:
-                    app.settings_button.invoke()
                     w.update()
-                    self.assertTrue(app.site_codes.legacy_button.winfo_viewable())
+                    self.assertTrue(app.site_codes.login_button.winfo_viewable())
                     with patch('collector.network_gui.messagebox.askyesno', return_value=False), patch('collector.network_gui.Pairing') as pair:
-                        app.site_codes.legacy_button.invoke()
+                        app.site_codes.login_button.invoke()
                         pair.assert_not_called()
                         self.assertFalse(app.resume_after_pair)
                         self.assertIsNone(app.tailer)
                     with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work') as work:
-                        app.site_codes.legacy_button.invoke()
+                        app.site_codes.login_button.invoke()
                         work.assert_called_once()
                     app.busy = True
                     app.results.put(('pair', None, OSError('private details'), app.pair_attempt))

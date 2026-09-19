@@ -10,12 +10,16 @@ from .version import VERSION
 
 
 def active(app):
-    from .site_code_gui import blocked
-    if blocked(app):
+    # A persisted uncertain site claim is restart-safe; only its active worker
+    # blocks replacement. Browser pairing remains blocked until durable recovery
+    # exists for that protocol. Never relax in-flight ACK or unsaved-key guards.
+    controls = getattr(app, 'site_codes', None)
+    if controls and controls.busy is True:
         return True
     expanded = getattr(app, 'expanded', None)
     legacy = getattr(app, 'legacy', None)
-    return bool((legacy and (legacy.enabled or legacy.busy)) or app.tailer or app.local_capture or app.upload_enabled or app.busy or app.pairing or getattr(app, 'recovered_token', None) or (expanded and (expanded.enabled or expanded.tailer or expanded.busy or expanded.pairing)))
+    volatile_pair = app.pairing and not getattr(app.pairing, 'durable', False)
+    return bool((legacy and (legacy.enabled or legacy.busy)) or app.tailer or app.local_capture or app.upload_enabled or app.busy or volatile_pair or getattr(app, 'recovered_token', None) or (expanded and (expanded.enabled or expanded.tailer or expanded.busy or expanded.pairing)))
 
 
 class UpdateControls:
@@ -33,13 +37,10 @@ class UpdateControls:
 
     def refresh_button(self):
         available = os.name == 'nt' and getattr(sys, 'frozen', False)
-        self.button.config(state='normal' if available and not self.busy and not active(self.app) else 'disabled')
+        self.button.config(state='normal' if available and not self.busy else 'disabled')
 
     def check(self):
         if self.busy:
-            return
-        if active(self.app):
-            messagebox.showwarning('Сначала остановите сбор', 'Нажмите «Остановить сбор», остановите локальную запись; дождитесь завершения запросов. Во время вылета обновление не выполняется.')
             return
         self.busy = True
         self.button.config(state='disabled')
@@ -65,7 +66,7 @@ class UpdateControls:
             elif result is None:
                 self.label.config(text=f'Версия {VERSION} · более новой стабильной версии нет.')
             elif active(self.app):
-                self.label.config(text='Обновление отложено: сбор или запрос снова включён. Остановите и повторите.')
+                self.label.config(text='Обновление загружено; замена отложена. Остановите сбор и дождитесь завершения запросов / сохранения ключа. Затем повторите проверку. Очередь и восстановление сохранены.')
             else:
                 stage, candidate, sha = result
                 if messagebox.askyesno('Перезапустить и обновить?', f'{VERSION} → {candidate}. SHA-256 проверен, цифровой подписи нет. Доверие — репозиторию sergkreis/sphol-log-collector и GitHub. Сохранить очереди и перезапустить сейчас? Сбор после запуска выключен.'):

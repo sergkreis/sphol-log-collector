@@ -14,10 +14,11 @@ if __name__ == "__main__":
         from tools.native_recovery_smoke import RecoveryIsolation
         from tools.native_scheduler_smoke import SchedulerTests
         from tools.native_fault_smoke import NativeFaultSmoke
+        from tools.native_browser_recovery_smoke import NativeBrowserRecovery
         with open(sys.argv[2], 'w', encoding='utf-8') as report:
             result = unittest.TextTestRunner(stream=report, verbosity=2).run(
                 unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(case)
-                                   for case in (NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke, RecoveryTk, NativeSiteCodeSmoke, NativeCompactSmoke, RecoveryIsolation, SchedulerTests, NativeFaultSmoke)))
+                                   for case in (NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke, RecoveryTk, NativeSiteCodeSmoke, NativeCompactSmoke, RecoveryIsolation, SchedulerTests, NativeFaultSmoke, NativeBrowserRecovery)))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     if len(sys.argv) == 6 and sys.argv[1] == '--apply-update':
         from collector.updater import helper

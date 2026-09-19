@@ -10,6 +10,7 @@ from .credentials import CredentialStore
 from .transport import Pairing, Uploader, PAIR_URI, ORIGIN
 from .pairing_ux import PairingUX, active_url, failure_text
 from .site_code_gui import blocked
+from .browser_gui import BrowserGUI
 
 
 class Snapshot:
@@ -33,7 +34,7 @@ class Snapshot:
         self.accepted = list(ids)
 
 
-class ConnectedApp(PairingUX, App):
+class ConnectedApp(BrowserGUI, PairingUX, App):
     def __init__(self, window, log_root, queue):
         self.results = messages.Queue()
         self.busy = False
@@ -90,6 +91,7 @@ class ConnectedApp(PairingUX, App):
         self.updates = UpdateControls(self)
         from .site_code_gui import SiteCodeControls
         self.site_codes = SiteCodeControls(self)
+        self.init_browser_recovery()
         self.open_site = ttk.Button(self.footer, text='Открыть сайт', command=lambda: webbrowser.open(ORIGIN))
         self.open_site.pack(side='right')
         window.update_idletasks()
@@ -102,7 +104,7 @@ class ConnectedApp(PairingUX, App):
         self.refresh_pairing_ux()
         if hasattr(self, 'connection_status'):
             from .connection_status import LABELS
-            state = self.connection_status.tick(self.uploader.credentials if self.uploader else None, bool(self.tailer))
+            state = self.connection_status.tick(self.uploader.credentials if self.uploader else None, bool(self.tailer or getattr(self, 'browser_required_probe', False)))
             colors = {'connected': '#80d8a0', 'offline': '#ef8791', 'denied': '#ef8791', 'checking': '#e8be75'}
             self.connection_badge.config(text=LABELS[state], foreground=colors.get(state, '#bcc5d3'))
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
@@ -112,7 +114,7 @@ class ConnectedApp(PairingUX, App):
             else:
                 self.pair_button.pack_forget()
 
-        self.unpair_button.config(state='disabled' if blocked(self) or self.busy or getattr(self, 'recovered_token', None) else 'normal')
+        self.unpair_button.config(state='disabled' if blocked(self) or self.browser_outstanding() or self.busy or getattr(self, 'recovered_token', None) else 'normal')
         self.upload_state.config(text='Отправка включена — только для привязанного персонажа' if self.upload_enabled else 'Отправка выключена — данные остаются на компьютере')
         if self.upload_enabled and getattr(self.uploader, 'failures', 0):
             self.upload_state.config(text='Сеть недоступна · очередь сохранена, повтор автоматически')
@@ -158,7 +160,7 @@ class ConnectedApp(PairingUX, App):
             return
         self.busy = True
         attempt = getattr(self, 'pair_attempt', 0) if kind in ('pair', 'token') else None
-        if kind == 'token':
+        if kind in ('token', 'browser_start', 'browser_token'):
             # Redemption is irreversible: keep this worker authoritative until it ends.
             self.redemption_pending = True
         if attempt is not None:
@@ -174,6 +176,9 @@ class ConnectedApp(PairingUX, App):
     def pair(self):
         if blocked(self):
             return
+        if self.browser_outstanding():
+            self.retry_browser()
+            return
         if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
             return
         if self.queue.count() and not self.uploader:
@@ -184,9 +189,7 @@ class ConnectedApp(PairingUX, App):
             self.resume_after_pair = False
             return
         self.pair_attempt = getattr(self, 'pair_attempt', 0) + 1
-        self.pairing = Pairing(scope='combat:write', browser=True, credentials=self.uploader.credentials if self.uploader else None)
-        self.pairing_notice('Получаем ссылку подтверждения от SPHOL… Это может занять до 20 секунд. Сбор ещё не начат.')
-        self.work('pair', self.pairing.start)
+        self.begin_browser()
 
     def start(self):
         if getattr(self, '_poll_failed', False):
@@ -199,9 +202,15 @@ class ConnectedApp(PairingUX, App):
         if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
             return
         if not self.uploader:
-            self.resume_after_pair = True
+            self.resume_after_pair = False
             self.pair()
             return
+        if getattr(self, 'browser_required_probe', False) and self.connection_status.state != 'connected':
+            self.pairing_notice('Дождитесь подтверждения подключения к SPHOL, затем нажмите «Начать сбор». Сбор выключен.')
+            self.refresh_controls()
+            return
+        if hasattr(self, 'pairing_panel'):
+            self.pairing_panel.pack_forget()
         self.upload_problem = False
         super().start()
         self.upload_enabled = bool(self.tailer and self.uploader and not self.uploader.paused)
@@ -244,7 +253,7 @@ class ConnectedApp(PairingUX, App):
         return closed
 
     def unpair(self):
-        if blocked(self):
+        if blocked(self) or self.browser_outstanding():
             return
         if self.busy or getattr(self, 'recovered_token', None) or (getattr(self, 'expanded', None) and self.expanded.busy):
             return
@@ -295,7 +304,9 @@ class ConnectedApp(PairingUX, App):
                 self.pair_job = None
             if kind == 'token':
                 self.redemption_pending = False
-            if error and kind in ('pair', 'token'):
+            if self.browser_result(kind, result, error):
+                pass
+            elif error and kind in ('pair', 'token'):
                 self.pairing_failed(failure_text(error))
                 if kind == 'token':
                     self.redemption_uncertain = True
@@ -364,7 +375,8 @@ class ConnectedApp(PairingUX, App):
                     self.upload_enabled = False
                 if status:
                     self.connection.config(text=status)
-        if (getattr(self, 'redemption_pending', False) and self.pairing
+        durable = bool(self.pairing and getattr(self.pairing, 'durable', False))
+        if (not durable and getattr(self, 'redemption_pending', False) and self.pairing
                 and self.pairing.deadline and time.monotonic() >= self.pairing.deadline):
             self.wait_for_redemption()
         if getattr(self, 'pair_job', None) and time.monotonic() >= self.pair_job[1]:
@@ -373,14 +385,16 @@ class ConnectedApp(PairingUX, App):
             else:
                 self.busy = False
                 self.pairing_failed('SPHOL не ответил вовремя. Очередь и привязка сохранены. Нажмите «Повторить привязку».')
-        if self.pairing and self.pairing.deadline and time.monotonic() >= self.pairing.deadline and not getattr(self, 'redemption_pending', False):
+        if not durable and self.pairing and self.pairing.deadline and time.monotonic() >= self.pairing.deadline and not getattr(self, 'redemption_pending', False):
             self.busy = False
             self.pairing_failed('Время подтверждения истекло. Сбор не начат; очередь сохранена. Нажмите «Повторить привязку».')
         if self.pairing_code.get() and (not self.pairing or time.monotonic() >= self.pairing.deadline):
             self.clear_pairing_code()
+        self.tick_browser()
         if not self.busy:
             if self.pairing:
-                self.work('token', self.pairing.poll)
+                if not durable:
+                    self.work('token', self.pairing.poll)
             elif self.upload_enabled and self.uploader:
                 snapshot = Snapshot(self.queue.batch(listeners={c['name'] for c in self.uploader.credentials['characters']}, combat_only=True), self.queue)
                 uploader = self.uploader

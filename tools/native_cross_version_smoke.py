@@ -10,17 +10,17 @@ import subprocess
 import sys
 import tempfile
 import time
-from tools.released_v035_queue import PendingQueue
+from tools.released_v039_queue import PendingQueue
 import json
 import sqlite3
 from collector.credentials import CredentialStore
 from collector.updater import ASSET, clean_env, download
 
-# Published v0.3.8; update manifest and SOURCE-COMMIT read back.
-# PendingQueue AST must match the retained released_v035_queue fixture.
-OLD_SOURCE_COMMIT = '2eacaabd579768ed39efb4372a725f15ba4814fc'
-OLD_VERSION = '0.3.8'
-OLD_SHA = '35049ac0d8c058253b1aa68d2c12d0220bb64f20672e4931a62b8dc994ab9f35'
+# Published v0.3.9; update manifest and SOURCE-COMMIT read back.
+# PendingQueue AST must match the retained released_v039_queue fixture.
+OLD_SOURCE_COMMIT = 'a45d659c835af336afd884e460c2e00d50ed2103'
+OLD_VERSION = '0.3.9'
+OLD_SHA = '0598ce884ea0b434a84d36153cceeaaebe4a3be3a357490f7c0c4dac1ed3e59c'
 
 
 from contextlib import contextmanager

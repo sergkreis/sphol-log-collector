@@ -58,11 +58,13 @@ class NativeSingleSmoke(unittest.TestCase):
                     self.assertFalse(app.expanded.enabled)
                     self.assertIsNone(app.tailer)
                     self.assertIsNone(app.expanded.tailer)
-                    app.settings_button.invoke()
-                    window.update()
-                    self.assertTrue(app.site_codes.legacy_button.winfo_viewable())
+                    self.assertTrue(app.site_codes.login_button.winfo_viewable())
+                    self.assertFalse(app.site_codes.legacy_button.winfo_viewable())
+                    app.site_codes.fallback_button.invoke(); window.update()
+                    self.assertTrue(app.site_codes.entry.winfo_viewable())
+                    app.site_codes.fallback_button.invoke(); window.update()
                     with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work'):
-                        app.site_codes.legacy_button.invoke()
+                        app.site_codes.login_button.invoke()
                     assert app.pairing is not None
                     self.assertTrue(app.pairing.browser)
                     self.assertEqual(app.pairing.scope, 'combat:write')

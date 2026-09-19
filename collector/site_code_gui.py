@@ -26,12 +26,15 @@ class SiteCodeControls:
         frame.pack(fill='x')
         self.step = ttk.Label(frame, text='Привяжите персонажа', style='Status.TLabel')
         self.step.pack(anchor='w', pady=(8, 12))
+        self.login_button = ttk.Button(frame, text='Войти через EVE', command=self.login)
+        self.fallback_button = ttk.Button(frame, text='Есть код с сайта…', command=self.toggle_fallback)
+        self.fallback_open = False
         self.get_code_button = ttk.Button(frame, text='1   Получить код на сайте', command=self.review)
         self.get_code_button.pack(anchor='w', pady=(0, 12))
         self.entry_label = ttk.Label(frame, text='2   Вставьте код с сайта', style='Muted.TLabel')
         self.entry_label.pack(anchor='w')
         self.code = StringVar(master=app.window)
-        row = ttk.Frame(frame)
+        self.code_row = row = ttk.Frame(frame)
         row.pack(fill='x', pady=6)
         self.entry = ttk.Entry(row, textvariable=self.code, width=24)
         self.entry.pack(side='left')
@@ -63,6 +66,15 @@ class SiteCodeControls:
             except Exception:
                 self.label.config(text='Защищённый запрос не читается. Проверьте и отзовите возможное устройство на сайте, затем завершите восстановление; зашифрованная копия будет сохранена.')
         self.tick()
+
+    def login(self):
+        # Binding never grants permission to start capture.
+        self.app.resume_after_pair = False
+        self.app.pair()
+
+    def toggle_fallback(self):
+        self.fallback_open = not self.fallback_open
+        self.refresh()
 
     def review(self):
         emit('site.review', 'start')
@@ -108,6 +120,8 @@ class SiteCodeControls:
     def submit(self, automatic=False):
         emit('site.retry' if automatic else 'site.click')
         app = self.app
+        if getattr(app, 'browser_outstanding', lambda: False)() is True and not self.uncertain:
+            return
         if self.busy or time.monotonic() < self.next_try or app.busy or app.pairing or app.tailer or getattr(app, 'recovered_token', None):
             return
         if app.uploader and not self.uncertain:
@@ -183,6 +197,26 @@ class SiteCodeControls:
             else:
                 self.legacy_button.pack(anchor='w', pady=8)
         # Onboarding replaces the capture view, never competes with Start.
+        self.legacy_button.pack_forget()
+        if self.uncertain:
+            self.login_button.pack_forget()
+            self.fallback_button.pack_forget()
+            self.code_row.pack(fill='x', before=self.links, pady=6)
+        else:
+            self.login_button.pack(anchor='w', after=self.step, pady=(0, 8))
+            self.fallback_button.pack(anchor='w', after=self.login_button)
+            self.login_button.config(state='disabled' if self.app.busy or self.app.pairing or self.app.uploader else 'normal')
+            if self.fallback_open:
+                self.step.pack(anchor='w', before=self.login_button, pady=0)
+                self.login_button.pack_configure(pady=0)
+                self.get_code_button.pack(anchor='w', after=self.fallback_button, pady=0)
+                self.entry_label.pack_forget()
+                self.code_row.pack(fill='x', after=self.get_code_button, pady=4)
+            else:
+                self.step.pack(anchor='w', before=self.login_button, pady=(8, 12))
+                self.get_code_button.pack_forget()
+                self.entry_label.pack_forget()
+                self.code_row.pack_forget()
         if hasattr(self.app, 'capture_area') and not self.app.settings_open:
             if not self.app.uploader or self.uncertain:
                 self.app.capture_area.pack_forget()
