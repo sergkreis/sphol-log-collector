@@ -34,7 +34,6 @@ class NativeSiteCodeSmoke(unittest.TestCase):
             'GetKeyboardState': ([ctypes.POINTER(w.BYTE)], w.BOOL),
             'SetKeyboardState': ([ctypes.POINTER(w.BYTE)], w.BOOL),
             'GetAsyncKeyState': ([ctypes.c_int], w.SHORT),
-            'MapVirtualKeyExW': ([w.UINT, w.UINT, w.HANDLE], w.UINT),
             'GetAncestor': ([w.HWND, w.UINT], w.HWND),
             'GetForegroundWindow': ([], w.HWND),
             'SetForegroundWindow': ([w.HWND], w.BOOL),
@@ -95,10 +94,19 @@ class NativeSiteCodeSmoke(unittest.TestCase):
             entry = ttk.Entry(root)
             entry.pack()
             presses = []
-            entry.bind('<Control-KeyPress>',
-                       lambda event: presses.append((event.keycode, event.state))
-                       if event.keycode == 0x56 else None)
             bind_paste(entry)
+            production_binding = entry.bind('<Control-KeyPress>')
+            production_tags = entry.bindtags()
+            # Observe before the widget tag: Tk may choose <<Paste>> instead of
+            # the widget's physical binding, and production paste returns break.
+            # A separate tag sees the native event without replacing either route.
+            observer_tag = f'NativePasteObserver{entry}'
+            entry.bindtags((observer_tag,) + production_tags)
+            entry.bind_class(observer_tag, '<Control-KeyPress>',
+                             lambda event: presses.append((event.keycode, event.state))
+                             if event.keycode == 0x56 else None)
+            self.assertEqual(entry.bind('<Control-KeyPress>'), production_binding)
+            self.assertEqual(entry.bindtags()[1:], production_tags)
             root.update()
             hwnd = user32.GetAncestor(root.winfo_id(), 2)  # GA_ROOT
             self.assertTrue(hwnd)
@@ -118,8 +126,9 @@ class NativeSiteCodeSmoke(unittest.TestCase):
                     self.assertTrue(user32.ActivateKeyboardLayout(layout, 0))
                     self.assertEqual(user32.GetKeyboardLayout(0), layout)
                     self.assertEqual(layout & 0xffff, language)
-                    mapped = user32.MapVirtualKeyExW(0x56, 2, layout)
-                    self.assertEqual(chr(mapped).lower(), character)
+                    # MAPVK_VK_TO_CHAR maps A..Z to Latin capitals regardless
+                    # of HKL (Microsoft's documented semantics). Prove the layout
+                    # with actual plain native input below, not that API.
                     self.assertEqual(user32.GetForegroundWindow(), hwnd)
                     entry.delete(0, 'end')
                     injected = True
