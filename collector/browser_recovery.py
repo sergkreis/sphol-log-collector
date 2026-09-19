@@ -8,7 +8,7 @@ from .credentials import crypt
 from .version import VERSION
 from .core import safe_open
 from .diagnostics import atomic
-from .transport import HTTPS, PAIR_URI, ProtocolError, encode, decode, validate_credentials
+from .transport import HTTPS, PAIR_URI, ProtocolError, encode, decode, validate_credentials, valid_eve_authorize_url
 
 
 def validate_claim(value):
@@ -70,11 +70,11 @@ class BrowserRecovery:
         verifier = secrets.token_urlsafe(32)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
         status, data = self.http.post('/api/collector/v1/pairings/browser', dict(
-            challenge=challenge, challenge_method='S256', scope=scope, recovery=True,
+            challenge=challenge, challenge_method='S256', scope=scope, recovery=True, direct_eve=True,
             client_version=VERSION, device_label='SPHOL Windows collector'))
         if (status not in (200, 201) or not isinstance(data, dict)
                 or set(data) != {'device_secret', 'user_code', 'verification_uri', 'expires_in', 'interval'}
-                or data['verification_uri'] != PAIR_URI
+                or not valid_eve_authorize_url(data['verification_uri'])
                 or not isinstance(data['user_code'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', data['user_code'])
                 or type(data['expires_in']) is not int or not 1 <= data['expires_in'] <= 300
                 or type(data['interval']) is not int or not 1 <= data['interval'] <= 30):
@@ -84,7 +84,7 @@ class BrowserRecovery:
         self.pending.save(claim)
         if self.pending.load() != claim:
             raise ProtocolError('Pending verification failed')
-        return PAIR_URI + '#' + data['user_code']
+        return data['verification_uri']
 
     def redeem(self):
         payload = validate_claim(self.pending.load())

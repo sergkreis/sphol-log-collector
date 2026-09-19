@@ -17,6 +17,15 @@ from collector.transport import Uploader
 from collector.transport import PAIR_URI
 
 
+def visible_button(root, text):
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+    return next(w for w in descendants(root)
+                if w.winfo_class() in ('Button', 'TButton') and w.cget('text') == text and w.winfo_viewable())
+
+
 def evidence(window, name):
     """Opt-in synthetic window-only screenshot, never the whole desktop."""
     destination = os.environ.get('SPHOL_SMOKE_EVIDENCE')
@@ -58,13 +67,16 @@ class NativeSingleSmoke(unittest.TestCase):
                     self.assertFalse(app.expanded.enabled)
                     self.assertIsNone(app.tailer)
                     self.assertIsNone(app.expanded.tailer)
-                    self.assertTrue(app.site_codes.login_button.winfo_viewable())
+                    self.assertTrue(app.modern.root.winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Войти через EVE').winfo_viewable())
                     self.assertFalse(app.site_codes.legacy_button.winfo_viewable())
-                    app.site_codes.fallback_button.invoke(); window.update()
-                    self.assertTrue(app.site_codes.entry.winfo_viewable())
-                    app.site_codes.fallback_button.invoke(); window.update()
+                    app.modern.show('settings'); window.update()
+                    self.assertTrue(visible_button(window, 'Обновить приложение').winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Сменить персонажа').winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Помощь').winfo_viewable())
+                    app.modern.show('main'); window.update()
                     with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work'):
-                        app.site_codes.login_button.invoke()
+                        visible_button(window, 'Войти через EVE').invoke()
                     assert app.pairing is not None
                     self.assertTrue(app.pairing.browser)
                     self.assertEqual(app.pairing.scope, 'combat:write')

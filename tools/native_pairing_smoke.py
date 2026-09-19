@@ -93,14 +93,18 @@ class RecoveryTk(unittest.TestCase):
                 app = ConnectedApp(w, logs, q)
                 try:
                     w.update()
-                    self.assertTrue(app.site_codes.login_button.winfo_viewable())
+                    self.assertFalse(app.site_codes.login_button.winfo_viewable())
+                    primary = getattr(app.modern, 'primary_button')
+                    settings = getattr(app.modern, 'settings_button')
+                    modern_root = getattr(app.modern, 'root')
+                    self.assertTrue(primary.winfo_viewable())
                     with patch('collector.network_gui.messagebox.askyesno', return_value=False), patch('collector.network_gui.Pairing') as pair:
-                        app.site_codes.login_button.invoke()
+                        primary.invoke()
                         pair.assert_not_called()
                         self.assertFalse(app.resume_after_pair)
                         self.assertIsNone(app.tailer)
                     with patch('collector.network_gui.messagebox.askyesno', return_value=True), patch.object(app, 'work') as work:
-                        app.site_codes.login_button.invoke()
+                        primary.invoke()
                         work.assert_called_once()
                     app.busy = True
                     app.results.put(('pair', None, OSError('private details'), app.pair_attempt))
@@ -113,9 +117,9 @@ class RecoveryTk(unittest.TestCase):
                     for width, height in ((560, 440),):
                         w.geometry(f'{width}x{height}')
                         w.update()
-                        for widget in (app.pairing_message, app.retry_button, app.browser_button,
-                                       app.link_button, app.settings_button,
-                                       app.footer, app.open_site):
+                        current_primary = getattr(app.modern, 'primary_button')
+                        current_settings = getattr(app.modern, 'settings_button')
+                        for widget in (current_primary, current_settings, modern_root):
                             self.assertTrue(widget.winfo_ismapped(), f'{widget}: {width}x{height}')
                             self.assertGreaterEqual(widget.winfo_height(), widget.winfo_reqheight())
                             self.assertGreaterEqual(widget.winfo_width(), widget.winfo_reqwidth())

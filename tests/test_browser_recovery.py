@@ -7,7 +7,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch, Mock
 from collector.browser_recovery import BrowserRecovery, BrowserPendingStore
-from collector.transport import ProtocolError
+from collector.transport import ProtocolError, valid_eve_authorize_url
 from test_site_code import Memory, CREDENTIAL
 
 
@@ -57,10 +57,16 @@ class BrowserTests(unittest.TestCase):
                         def save(self, value): self.path.write_text(json.dumps(value))
                         def clear(self): self.path.unlink()
                     pending, store = Disk(), Memory()
-                    client = BrowserRecovery(pending, store)
-                    uri = client.start('combat:write')
+                    with patch.object(server, 'SSO_CLIENT_ID', 'client-id'), patch.object(server, 'SSO_CLIENT_SECRET', 'secret'):
+                        client = BrowserRecovery(pending, store)
+                        uri = client.start('combat:write')
                     claim = pending.load()
-                    self.assertEqual(fixture.request('approval', {'user_code': uri.split('#')[1], 'consent': True})[0], 200)
+                    self.assertTrue(valid_eve_authorize_url(uri))
+                    import urllib.parse
+                    oauth_state = urllib.parse.parse_qs(urllib.parse.urlparse(uri).query)['state'][0]
+                    import eve_sso
+                    fixture.api.validate_oauth_state(oauth_state)
+                    fixture.api.approve_oauth(oauth_state, eve_sso.Identity(42, 'Test Pilot', (), 9999999999, 'token'), 123)
                     send, committed = server.Handler.send_json, []
                     def lose(handler, status, payload):
                         if handler.path.endswith('/pairings/token') and status == 200:

@@ -77,7 +77,8 @@ class NativeBrowserRecovery(unittest.TestCase):
                         window.destroy(); gc.collect()
                     try:
                         app = ConnectedApp(window, logs, q); window.update()
-                        app.site_codes.login_button.invoke()
+                        from tools.native_single_smoke import visible_button
+                        visible_button(window, 'Войти через EVE').invoke()
                         pump(lambda: app.browser_outstanding() and not app.busy)
                         uri = active_url(app.pairing)
                         self.assertTrue(uri)

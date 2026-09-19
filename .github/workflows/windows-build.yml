@@ -24,7 +24,7 @@ jobs:
       - name: Native single Start streams and identity isolation
         run: python -m tools.native_single_smoke
       - run: python -m pip install --require-hashes --only-binary=":all:" -r requirements-build.txt
-      - run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name SPHOLLogCollector run_collector.py
+      - run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name SPHOLLogCollector --add-data "collector/assets;collector/assets" run_collector.py
       - name: Frozen EXE connection states, single Start, consent, counters and isolation
         env:
           SPHOL_SMOKE_EVIDENCE: smoke-reports
@@ -55,7 +55,7 @@ jobs:
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummyNew tools/update_dummy.py
       - name: Frozen self-update against isolated dummy executable
         run: python -m tools.native_update_smoke dist/SPHOLLogCollector.exe dist/UpdateDummy.exe dist/UpdateDummyNew.exe
-      - name: Pinned released v0.3.9 to real new collector replacement and DPAPI preservation (egress blocked)
+      - name: Pinned released v0.3.10 to real new collector replacement and DPAPI preservation (egress blocked)
         shell: pwsh
         run: |
           python -m tools.native_cross_version_smoke dist/SPHOLLogCollector.exe 2>&1 | Tee-Object smoke-reports/cross-version.txt

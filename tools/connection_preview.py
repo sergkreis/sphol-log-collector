@@ -72,7 +72,9 @@ def render(destination=None):
                         with patch.object(app.connection_status, 'tick', return_value='checking'):
                             app.refresh_controls()
                     window.update()
-                    for widget in (app.identity, app.connection_badge, app.main_button):
+                    widgets = (app.modern.root, app.modern.primary_button, app.modern.conn_label,
+                               app.modern.send_label, app.modern.sent_label, app.modern.pending_label)
+                    for widget in widgets:
                         assert widget.winfo_viewable()
                         assert widget.winfo_height() >= widget.winfo_reqheight()
                     if destination is not None:

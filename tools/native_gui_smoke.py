@@ -20,6 +20,15 @@ from collector.network_gui import ConnectedApp, Snapshot
 from collector.transport import Pairing
 
 
+def visible_button(root, text):
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+    return next(w for w in descendants(root)
+                if w.winfo_class() in ('Button', 'TButton') and w.cget('text') == text and w.winfo_viewable())
+
+
 class NativeGuiSmoke(unittest.TestCase):
     def tearDown(self):
         # Collect destroyed Tk cycles on their owning thread, before later HTTP
@@ -96,7 +105,8 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertFalse(app.expanded.start_button.winfo_viewable())
                     self.assertFalse(app.settings.winfo_viewable())
                     self.assertFalse(app.main_button.winfo_viewable())
-                    self.assertTrue(app.site_codes.frame.winfo_viewable())
+                    self.assertTrue(app.modern.root.winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Войти через EVE').winfo_viewable())
                     self.assertEqual(app.expanded.approve_button.cget('text'), 'Разрешить наблюдения')
                     with patch('collector.expanded_gui.messagebox.askyesno', return_value=False), patch.object(app.expanded, 'work') as work:
                         app.expanded.approve_button.invoke()
@@ -104,10 +114,13 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertIsNone(app.expanded.pairing)
                     self.assertFalse(app.expanded.enabled)
                     self.assertTrue(window.winfo_viewable())
-                    app.settings_button.invoke()
+                    visible_button(window, 'Настройки').invoke()
                     window.update()
-                    self.assertTrue(app.settings.winfo_viewable())
-                    app.settings_button.invoke()
+                    self.assertTrue(app.modern.root.winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Обновить приложение').winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Сменить персонажа').winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Помощь').winfo_viewable())
+                    visible_button(window, '← Назад').invoke()
                     window.update()
                     self.assertFalse(app.settings.winfo_viewable())
                     # Actual update button/result path, with only transport mocked.
@@ -173,13 +186,16 @@ class NativeGuiSmoke(unittest.TestCase):
                     window.update()
                     identity = app.identity.cget('text')
                     ack = app.last_ack.cget('text')
-                    self.assertTrue(app.identity.winfo_viewable())
-                    self.assertTrue(app.main_button.winfo_viewable())
+                    self.assertTrue(app.modern.root.winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Начать сбор').winfo_viewable())
                     self.assertFalse(app.site_codes.frame.winfo_viewable())
                     self.assertTrue(app.pair_button.instate(['disabled']))
                     self.assertFalse(app.code_frame.winfo_ismapped())
+                    self.assertTrue(app.modern.root.winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Начать сбор').winfo_viewable())
+                    self.assertTrue(visible_button(window, 'Настройки').winfo_viewable())
                     self.assertFalse(app.upload_enabled)
-                    app.main_button.invoke()
+                    visible_button(window, 'Начать сбор').invoke()
                     with patch.object(app, 'work') as work:
                         for _ in range(3):
                             app.network_tick()

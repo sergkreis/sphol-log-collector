@@ -94,6 +94,8 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         self.init_browser_recovery()
         self.open_site = ttk.Button(self.footer, text='Открыть сайт', command=lambda: webbrowser.open(ORIGIN))
         self.open_site.pack(side='right')
+        from .modern_ui import ModernShell
+        self.modern = ModernShell(self)
         window.update_idletasks()
         window.geometry('560x440')
         self.refresh_controls()
@@ -125,6 +127,8 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         elif self.uploader and not self.upload_enabled:
             self.upload_state.config(text='Отправка выключена. «Начать сбор» отправляет только боевые события на sphol.com')
         self.capture_controls()
+        if hasattr(self, 'modern'):
+            self.modern.refresh()
 
     def clear_pairing_code(self):
         # Never modify the clipboard automatically.
@@ -185,7 +189,7 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
             self.resume_after_pair = False
             self.pairing_notice('Есть непривязанная очередь. Она сохранена; новая привязка остановлена для защиты данных. Обратитесь в поддержку — не удаляйте очередь для повтора.')
             return
-        if not messagebox.askyesno('Привязать персонажа?', 'Открыть sphol.com для подтверждения персонажа? После привязки «Начать сбор» автоматически отправляет его новые боевые события и сохранённую очередь на sphol.com. Остановка прекращает сбор и новые запросы. Пароль здесь не вводится.'):
+        if not messagebox.askyesno('Войти через EVE?', 'Открыть официальный сайт EVE для выбора основного персонажа? После входа SPHOL безопасно выдаст ключ приложению. Сбор не начнётся, пока вы отдельно не нажмёте «Начать сбор». Пароль здесь не вводится.'):
             self.resume_after_pair = False
             return
         self.pair_attempt = getattr(self, 'pair_attempt', 0) + 1

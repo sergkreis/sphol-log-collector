@@ -16,11 +16,11 @@ import sqlite3
 from collector.credentials import CredentialStore
 from collector.updater import ASSET, clean_env, download
 
-# Published v0.3.9; update manifest and SOURCE-COMMIT read back.
-# PendingQueue AST must match the retained released_v039_queue fixture.
-OLD_SOURCE_COMMIT = 'a45d659c835af336afd884e460c2e00d50ed2103'
-OLD_VERSION = '0.3.9'
-OLD_SHA = '0598ce884ea0b434a84d36153cceeaaebe4a3be3a357490f7c0c4dac1ed3e59c'
+# Published v0.3.10; update manifest and SOURCE-COMMIT read back.
+# PendingQueue AST remains compatible with the retained released_v039_queue fixture.
+OLD_SOURCE_COMMIT = '39f8c19530945a35f9ebe1a9574b3e622ea0bfa6'
+OLD_VERSION = '0.3.10'
+OLD_SHA = '4ce28e1a201ccf748deb0a9c311bbd6b35e62b0ac6231d112b485c0cecc0b96c'
 
 
 from contextlib import contextmanager

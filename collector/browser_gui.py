@@ -34,7 +34,7 @@ class BrowserGUI:
 
     def begin_browser(self):
         self.pairing = SimpleNamespace(browser=True, durable=True, scope='combat:write', browser_uri=None, deadline=0)
-        self.pairing_notice('Получаем защищённую ссылку SPHOL… Сбор выключен.')
+        self.pairing_notice('Откроется официальный вход EVE. После выбора персонажа вернитесь в приложение; сбор останется выключен.')
         self.work('browser_start', lambda: self.browser_recovery.start('combat:write'))
 
     def retry_browser(self):

@@ -139,16 +139,27 @@ def render(destination):
                     assert [int(x.cget('text')) for x in app.dashboard.metrics] == ([13, 12, 1] if scene == 'offline' else [12, 12, 0])
                     assert list(queue.db.execute("SELECT * FROM pending WHERE id LIKE 'legacy-%'")) == legacy
                     if scene in ('settings', 'updater-feedback'):
-                        app.settings_button.invoke()
+                        if hasattr(app, 'modern'):
+                            app.modern.show('settings')
+                        else:
+                            app.settings_button.invoke()
                         window.update()
-                        assert app.settings.winfo_viewable()
-                        assert app.settings_canvas.yview()[1] < 1
-                        app.settings_canvas.yview_moveto(1)
-                        window.update()
-                        assert app.settings_canvas.yview()[1] == 1
-                        app.settings_canvas.yview_moveto(0)
-                        window.update()
-                        assert app.support_button.winfo_viewable()
+                        if hasattr(app, 'modern'):
+                            assert app.modern.root.winfo_viewable()
+                            app.modern.refresh()
+                            window.update()
+                            from tools.simple_ui_preview import descendants
+                            buttons = [w for w in descendants(app.modern.root) if isinstance(w, tk.Button) and w.winfo_viewable()]
+                            assert buttons, 'modern settings has no visible button'
+                        else:
+                            assert app.settings.winfo_viewable()
+                            assert app.settings_canvas.yview()[1] < 1
+                            app.settings_canvas.yview_moveto(1)
+                            window.update()
+                            assert app.settings_canvas.yview()[1] == 1
+                            app.settings_canvas.yview_moveto(0)
+                            window.update()
+                            assert app.support_button.winfo_viewable()
                     if scene == 'updater-feedback':
                         app.stop()
                         with patch('collector.update_gui.updater.prepare', return_value=None) as prepare:
@@ -165,11 +176,20 @@ def render(destination):
                     assert_main_bounds(window, app)
                     x, y = window.winfo_rootx(), window.winfo_rooty()
                     assert (window.winfo_width(), window.winfo_height()) == ((680, 620) if app.settings_open else (560, 440))
-                    for widget in (app.identity, app.settings_button, app.footer, app.open_site) + ((app.updates.button,) if scene in ('settings', 'updater-feedback') else (app.main_button, app.last_ack, app.dashboard.notice, app.dashboard.sent, app.dashboard.waiting)):
+                    if hasattr(app, 'modern'):
+                        modern_widgets = [app.modern.root]
+                        for name in ('primary_button', 'settings_button', 'conn_label', 'send_label', 'sent_label', 'pending_label'):
+                            widget = getattr(app.modern, name, None)
+                            if widget is not None and widget.winfo_exists():
+                                modern_widgets.append(widget)
+                        widgets = tuple(modern_widgets)
+                    else:
+                        widgets = (app.identity, app.settings_button, app.footer, app.open_site) + ((app.updates.button,) if scene in ('settings', 'updater-feedback') else (app.main_button, app.last_ack, app.dashboard.notice, app.dashboard.sent, app.dashboard.waiting))
+                    for widget in widgets:
                         assert widget.winfo_viewable(), str(widget)
                         assert widget.winfo_rooty() + widget.winfo_height() <= y + window.winfo_height(), str(widget)
                         assert widget.winfo_height() >= widget.winfo_reqheight(), str(widget)
-                    if app.settings_open:
+                    if app.settings_open and not hasattr(app, 'modern'):
                         # Every settings control fits horizontally at minimum size;
                         # scrolling is the only permitted clipping direction.
                         from tools.simple_ui_preview import descendants

@@ -11,6 +11,7 @@ import secrets
 import ssl
 import time
 import threading
+import urllib.parse
 import weakref
 from .diagnostics import emit, observed
 
@@ -128,6 +129,24 @@ def opaque(value):
     return isinstance(value, str) and re.fullmatch(r'[\x21-\x7e]{32,512}', value) is not None
 
 
+def valid_eve_authorize_url(value):
+    if not isinstance(value, str) or len(value) > 2048:
+        return False
+    try:
+        parsed = urllib.parse.urlparse(value)
+        qs = urllib.parse.parse_qs(parsed.query, keep_blank_values=False)
+    except Exception:
+        return False
+    return (parsed.scheme == 'https' and parsed.netloc == 'login.eveonline.com'
+            and parsed.path == '/v2/oauth/authorize' and not parsed.params and not parsed.fragment
+            and qs.get('response_type') == ['code']
+            and len(qs.get('client_id', [])) == 1
+            and len(qs.get('redirect_uri', [])) == 1
+            and len(qs.get('state', [])) == 1
+            and re.fullmatch(r'collector_[A-Za-z0-9_-]{32,160}', qs['state'][0]) is not None
+            and set(qs).issubset({'response_type', 'client_id', 'redirect_uri', 'state', 'scope'}))
+
+
 def expiry(value):
     try:
         when = datetime.fromisoformat(value.replace('Z', '+00:00'))
@@ -177,17 +196,27 @@ class Pairing:
     def start(self):
         challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode('ascii')).digest()).rstrip(b'=').decode()
         status, data = self.http.post('/api/collector/v1/pairings/browser' if self.browser else '/api/collector/v1/pairings', {
-            'challenge': challenge, 'challenge_method': 'S256', 'client_version': '0.2.0',
+            'challenge': challenge, 'challenge_method': 'S256', 'client_version': __import__('collector.version', fromlist=['VERSION']).VERSION,
             'device_label': 'SPHOL Windows collector',
+            **({'direct_eve': True} if self.browser and not self.credentials else {}),
             **({'scope': self.scope} if self.scope != 'combat:write' else {})}, **({'token': self.credentials['access_token']} if self.credentials else {}))
         keys = {'device_secret', 'user_code', 'verification_uri', 'expires_in', 'interval'}
         if status not in (200, 201) or not isinstance(data, dict) or set(data) != keys:
             raise ProtocolError('Invalid pairing response')
-        if not opaque(data['device_secret']) or data['verification_uri'] != PAIR_URI or not isinstance(data['user_code'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}' if self.browser else '[A-Z0-9-]{4,32}', data['user_code']):
+        if not opaque(data['device_secret']) or not isinstance(data['user_code'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}' if self.browser else '[A-Z0-9-]{4,32}', data['user_code']):
             raise ProtocolError('Invalid pairing origin or code')
+        if self.browser:
+            if self.credentials:
+                if data['verification_uri'] != PAIR_URI:
+                    raise ProtocolError('Invalid pairing origin')
+            elif not valid_eve_authorize_url(data['verification_uri']):
+                raise ProtocolError('Invalid EVE login origin')
+        elif data['verification_uri'] != PAIR_URI:
+            raise ProtocolError('Invalid pairing origin')
         if type(data['expires_in']) is not int or not 1 <= data['expires_in'] <= 300 or type(data['interval']) is not int or not 1 <= data['interval'] <= 30:
             raise ProtocolError('Invalid pairing timing')
-        self.browser_uri = PAIR_URI + '#' + data['user_code'] if self.browser else None
+        self.browser_uri = (PAIR_URI + '#' + data['user_code'] if self.browser and self.credentials
+                            else data['verification_uri'] if self.browser else None)
         self.secret, self.interval = data['device_secret'], data['interval']
         self.deadline = time.monotonic() + data['expires_in']
         self.next_poll = time.monotonic() + self.interval
