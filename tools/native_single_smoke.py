@@ -73,18 +73,23 @@ class NativeSingleSmoke(unittest.TestCase):
                     app.pairing.deadline = float('inf')
                     app.results.put(('pair', proof, None))
                     with patch.object(app, 'work'), patch('collector.pairing_ux.webbrowser.open', return_value=True) as browser:
+                        def await_browser(count):
+                            # Tk's scheduled poll may already have consumed the result.
+                            # Assert completed work, not transient queue occupancy.
+                            deadline = time.monotonic() + 3
+                            while time.monotonic() < deadline:
+                                window.update()
+                                app.poll_browser(); app.refresh_controls()
+                                if browser.call_count == count and app.browser_job is None:
+                                    break
+                                time.sleep(.01)
+                            self.assertEqual(browser.call_count, count, 'browser worker timed out')
+                            self.assertIsNone(app.browser_job, 'browser result not handled')
+                            self.assertIn('Подтвердите привязку', app.pairing_message.cget('text'))
                         app.network_tick(); window.update()
-                        deadline = time.monotonic() + 3
-                        while app.browser_results.empty() and time.monotonic() < deadline:
-                            time.sleep(.01)
-                        self.assertFalse(app.browser_results.empty(), 'browser worker timed out')
-                        app.poll_browser(); app.refresh_controls()
+                        await_browser(1)
                         app.browser_button.invoke()
-                        deadline = time.monotonic() + 3
-                        while app.browser_results.empty() and time.monotonic() < deadline:
-                            time.sleep(.01)
-                        self.assertFalse(app.browser_results.empty(), 'reopen worker timed out')
-                        app.poll_browser(); app.refresh_controls()
+                        await_browser(2)
                         self.assertEqual(browser.call_count, 2)
                         browser.assert_called_with(app.pairing.browser_uri)
                     self.assertEqual(app.code_field.get(), '')
