@@ -306,8 +306,8 @@ class ModernShell:
             self.primary_button = self.button(card, 'Остановить сбор', self.app.stop, pady=(8, 8))
         else:
             self.primary_button = self.button(card, 'Начать сбор', self.app.start, primary=True, pady=(8, 8))
-        self.counters(card)
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))
+        self.counters(card)
 
     def last_ack_text(self):
         dash = getattr(self.app, 'dashboard', None)
