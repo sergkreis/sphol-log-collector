@@ -12,6 +12,7 @@ import urllib.request
 from PIL import Image
 
 from .version import VERSION
+from .connection_status import LABELS, DELIVERY_LABELS
 
 PAGE_BG = '#0b1016'
 CARD_BG = '#151e28'
@@ -86,9 +87,9 @@ class ModernShell:
 
     def card(self):
         self.destroy_children()
-        outer = tk.Frame(self.frame, bg=PAGE_BG, padx=10, pady=6)
+        outer = tk.Frame(self.frame, bg=PAGE_BG, padx=10, pady=4)
         outer.pack(fill='both', expand=True)
-        card = tk.Frame(outer, bg=CARD_BG, padx=18, pady=10)
+        card = tk.Frame(outer, bg=CARD_BG, padx=18, pady=7)
         card.pack(fill='both', expand=True)
         header = tk.Frame(card, bg=CARD_BG)
         header.pack(fill='x')
@@ -122,7 +123,7 @@ class ModernShell:
 
     def character(self, card, subtitle=True):
         row = tk.Frame(card, bg=CARD_BG)
-        row.pack(fill='x', pady=(14, 12))
+        row.pack(fill='x', pady=(8, 6))
         portrait = self.portrait_image()
         tk.Label(row, image=portrait, bg=CARD_BG).pack(side='left')
         text = tk.Frame(row, bg=CARD_BG)
@@ -232,8 +233,9 @@ class ModernShell:
 
     def update_dynamic(self, state):
         if state in ('active', 'offline', 'idle'):
-            conn_color, conn, sending, detail = self.status_text(state)
-            self.conn_label.config(text='●  ' + conn, fg=conn_color)
+            conn_color, conn, delivery, sending, detail = self.status_text(state)
+            self.conn_label.config(text=conn, fg=conn_color)
+            self.delivery_label.config(text=delivery)
             self.send_label.config(text=sending)
             self.detail_label.config(text=detail)
             self.update_counters()
@@ -249,24 +251,60 @@ class ModernShell:
     def sent_count(self):
         return getattr(getattr(self.app, 'dashboard', None), 'confirmed', 0)
 
+    def delivery_text(self):
+        check = getattr(self.app, 'delivery_check', None)
+        state = getattr(check, 'state', 'unknown')
+        text = DELIVERY_LABELS.get(state, DELIVERY_LABELS['unknown'])
+        received = getattr(check, 'ack_received_at', None)
+        if state == 'connected' and received:
+            text += ' · подтверждено ' + self.friendly_received_at(received)
+        return text
+
+    def friendly_received_at(self, value):
+        try:
+            from .connection_status import strict_utc_timestamp
+            when = strict_utc_timestamp(value)
+            return time.strftime('%H:%M:%S', time.localtime(when))
+        except Exception:
+            return 'сервером'
+
+    def connection_color(self):
+        state = getattr(getattr(self.app, 'connection_status', None), 'state', 'unknown')
+        if state == 'connected':
+            return GREEN
+        if state in ('denied', 'offline'):
+            return DANGER
+        if state in ('checking', 'unknown'):
+            return AMBER
+        return MUTED
+
+    def connection_text(self):
+        state = getattr(getattr(self.app, 'connection_status', None), 'state', 'unknown')
+        compact = {'denied': 'Доступ к SPHOL отклонён', 'offline': 'Нет связи с SPHOL · повторяем',
+                   'unknown': 'Связь с SPHOL: проверяется', 'stopped': 'Связь с SPHOL: проверка выключена'}
+        text = compact.get(state, LABELS.get(state, LABELS['unknown']))
+        return text if text.startswith('●') else '● ' + text
+
     def status_text(self, state):
         conn_state = getattr(getattr(self.app, 'connection_status', None), 'state', 'unknown')
         pending = self.pending_count()
         ack = getattr(getattr(self.app, 'dashboard', None), 'ack_at', None)
         failures = getattr(getattr(self.app, 'uploader', None), 'failures', 0)
+        conn = self.connection_text()
+        delivery = self.delivery_text()
         if state == 'offline':
-            conn = 'Связь с SPHOL: нет соединения' if conn_state == 'offline' else 'Связь с SPHOL: требуется проверка'
-            return AMBER, conn, 'Отправка: очередь сохранена', 'Автоповтор при восстановлении связи.'
+            color = DANGER if conn_state == 'denied' else AMBER
+            return color, conn, delivery, 'Отправка: очередь сохранена', 'Автоповтор при восстановлении связи.'
         if state == 'active':
-            conn = 'Связь с SPHOL: подключено' if conn_state not in ('checking', 'unknown') else 'Связь с SPHOL: проверяется'
+            color = self.connection_color()
             if failures:
-                return AMBER, conn, 'Отправка: повторяем после ошибки', 'Очередь не потеряна.'
+                return color, conn, delivery, 'Отправка: повторяем после ошибки', 'Очередь не потеряна.'
             if pending:
-                return GREEN, conn, f'Отправка: ждёт {pending}', self.last_ack_text()
+                return color, conn, delivery, f'Отправка: ждёт {pending}', self.last_ack_text()
             if ack is None:
-                return GREEN, conn, 'Отправка: ждёт первой записи', 'Подтверждённых отправок ещё не было.'
-            return GREEN, conn, 'Отправка: всё подтверждено', self.last_ack_text()
-        return MUTED, 'Связь с SPHOL: готово', 'Отправка: выключена', 'Нажмите «Начать сбор» перед боем.'
+                return color, conn, delivery, 'Отправка: ждёт первой записи', 'Подтверждённых отправок ещё не было.'
+            return color, conn, delivery, 'Отправка: всё подтверждено', self.last_ack_text()
+        return self.connection_color(), conn, delivery, 'Отправка: выключена', 'Нажмите «Начать сбор» перед боем.'
 
     def render_first(self):
         card = self.card()
@@ -298,10 +336,11 @@ class ModernShell:
         card = self.card()
         self.character(card, subtitle=not offline)
         state = 'active' if active else ('offline' if offline else 'idle')
-        color, conn, sending, detail = self.status_text(state)
-        self.conn_label = self.label(card, '●  ' + conn, 13, color, 'bold', pady=(0, 6))
+        color, conn, delivery, sending, detail = self.status_text(state)
+        self.conn_label = self.label(card, conn, 13, color, 'bold', pady=(0, 4))
+        self.delivery_label = self.label(card, delivery, 11, MUTED, 'normal', pady=(0, 2))
         self.send_label = self.label(card, sending, 13, TEXT, 'normal')
-        self.detail_label = self.label(card, detail, 11, MUTED, pady=(4, 4))
+        self.detail_label = self.label(card, detail, 11, MUTED, pady=(2, 2))
         if active or offline:
             self.primary_button = self.button(card, 'Остановить сбор', self.app.stop, pady=(6, 5))
         else:

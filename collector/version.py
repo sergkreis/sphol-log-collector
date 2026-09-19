@@ -1,2 +1,2 @@
 """Bump before creating a matching stable GitHub Release."""
-VERSION = '0.3.12'
+VERSION = '0.3.13'

@@ -72,7 +72,7 @@ def retry_after(value, now=None):
 
 class HTTPS:
     def post(self, path, payload, token=None):
-        if path not in ('/api/collector/v1/site-codes/redeem', '/api/collector/v1/pairings', '/api/collector/v1/pairings/token', '/api/collector/v1/pairings/browser', '/api/collector/v1/pairings/browser/recover', '/api/collector/v1/events'):
+        if path not in ('/api/collector/v1/site-codes/redeem', '/api/collector/v1/pairings', '/api/collector/v1/pairings/token', '/api/collector/v1/pairings/browser', '/api/collector/v1/pairings/browser/recover', '/api/collector/v1/events', '/api/collector/v1/delivery-check'):
             raise ProtocolError('Disallowed endpoint')
         body = encode(payload)
         if len(body) > MAX_BODY:

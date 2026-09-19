@@ -27,7 +27,10 @@ def render(destination=None):
             window = tk.Tk()
             app = None
             try:
-                with patch.object(window, 'after'), patch('collector.connection_status.probe', return_value=None):
+                with patch.object(window, 'after'), \
+                        patch('collector.connection_status.probe', return_value=None), \
+                        patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+                        patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')) as default_post:
                     app = ConnectedApp(window, logs, queue)
                     app.uploader = Uploader(CREDS)
                     app.show_identity()
@@ -65,6 +68,7 @@ def render(destination=None):
                     assert app.dashboard.ack_at == ack
                     if scene == 'one-stream-failure':
                         assert 'Не отправляются: наблюдения' in app.dashboard.notice.cget('text')
+                    default_post.assert_not_called()
                     # Restore zero-event screenshot; no fabricated production ACK.
                     app.dashboard.ack_at = None; app.dashboard.confirmed = 0
                     app.dashboard.refresh(); app.expanded.refresh_summary()
@@ -72,11 +76,18 @@ def render(destination=None):
                         with patch.object(app.connection_status, 'tick', return_value='checking'):
                             app.refresh_controls()
                     window.update()
+                    window.update_idletasks()
                     widgets = (app.modern.root, app.modern.primary_button, app.modern.conn_label,
                                app.modern.send_label, app.modern.sent_label, app.modern.pending_label)
                     for widget in widgets:
                         assert widget.winfo_viewable()
-                        assert widget.winfo_height() >= widget.winfo_reqheight()
+                        if widget.winfo_height() < widget.winfo_reqheight():
+                            text = ''
+                            try:
+                                text = widget.cget('text')
+                            except tk.TclError:
+                                pass
+                            raise AssertionError((scene, str(widget), widget.winfo_height(), widget.winfo_reqheight(), text))
                     if destination is not None:
                         x, y = window.winfo_rootx(), window.winfo_rooty()
                         ImageGrab.grab(bbox=(x, y, x+window.winfo_width(), y+window.winfo_height())).save(destination / (scene+'.png'))
@@ -84,8 +95,16 @@ def render(destination=None):
                         evidence(window, 'connection-' + scene)
             finally:
                 if app:
-                    app.stop(); app.expanded.close(); app.legacy.close()
-                queue.close(); window.destroy()
+                    app.close(); app.expanded.close(); app.legacy.close()
+                queue.close()
+                try:
+                    if window.winfo_exists():
+                        window.destroy()
+                except tk.TclError:
+                    pass
+            del app, window
+            import gc
+            gc.collect()
         print('PASS', scene)
 
 

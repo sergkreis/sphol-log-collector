@@ -34,6 +34,8 @@ def render(destination):
                 patch.object(socket.socket, 'connect_ex', side_effect=AssertionError('Network forbidden')), \
                 patch('collector.network_gui.CredentialStore.load', return_value=None), \
                 patch('collector.connection_status.probe', side_effect=(OSError('Synthetic offline') if scene == 'offline' else HTTPFailure(403) if scene == 'denied' else None), return_value=None), \
+                patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+                patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')) as default_post, \
                 patch('webbrowser.open'):
             root = Path(temp)
             logs = root / 'Gamelogs'
@@ -127,6 +129,7 @@ def render(destination):
                     if app.connection_status.worker:
                         app.connection_status.worker.join(1)
                     app.refresh_controls()
+                    default_post.assert_not_called()
                     if scene == 'denied':
                         assert app.connection_status.state == 'denied'
                         assert 'автоматически' not in app.dashboard.notice.cget('text')
@@ -188,7 +191,7 @@ def render(destination):
                     for widget in widgets:
                         assert widget.winfo_viewable(), str(widget)
                         assert widget.winfo_rooty() + widget.winfo_height() <= y + window.winfo_height(), str(widget)
-                        assert widget.winfo_height() >= widget.winfo_reqheight(), str(widget)
+                        assert widget.winfo_height() >= widget.winfo_reqheight(), (scene, str(widget), widget.winfo_height(), widget.winfo_reqheight())
                     if app.settings_open and not hasattr(app, 'modern'):
                         # Every settings control fits horizontally at minimum size;
                         # scrolling is the only permitted clipping direction.

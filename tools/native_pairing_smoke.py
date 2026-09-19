@@ -27,7 +27,9 @@ class RecoveryTk(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp, \
                 patch.object(socket.socket, 'connect', side_effect=AssertionError('offline only')), \
                 patch('collector.network_gui.CredentialStore.load', return_value=None), \
-                patch('collector.connection_status.probe', return_value=None):
+                patch('collector.connection_status.probe', return_value=None), \
+                patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+                patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')):
             root = Path(temp)
             logs = root / 'Gamelogs'
             logs.mkdir()
@@ -81,7 +83,9 @@ class RecoveryTk(unittest.TestCase):
                 patch.object(socket.socket, 'connect', side_effect=AssertionError('offline only')), \
                 patch.object(socket.socket, 'connect_ex', side_effect=AssertionError('offline only')), \
                 patch('collector.network_gui.CredentialStore.load', return_value=None), \
-                patch('collector.connection_status.probe', return_value=None):
+                patch('collector.connection_status.probe', return_value=None), \
+                patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+                patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')):
             root = Path(temp)
             logs = root / 'Gamelogs'
             logs.mkdir()

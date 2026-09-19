@@ -108,7 +108,7 @@ class NativeBrowserRecovery(unittest.TestCase):
                     real_send = server.Handler.send_json
                     real_connect = socket.socket.connect
                     def record_send(handler, status, payload):
-                        if handler.path == '/api/collector/v1/connection':
+                        if handler.path in ('/api/collector/v1/connection', '/api/collector/v1/delivery-check'):
                             observed.append((handler.path, status, handler.server.server_port))
                         return real_send(handler, status, payload)
                     def record_connect(sock, address):
@@ -171,11 +171,30 @@ class NativeBrowserRecovery(unittest.TestCase):
                         oauth_state = urllib.parse.parse_qs(urllib.parse.urlparse(uri).query)['state'][0]
                         import eve_sso
                         fixture.api.approve_oauth(oauth_state, eve_sso.Identity(42, 'Test Pilot', (), 9999999999, 'token'), 123)
-                        pump(lambda: app.uploader is not None and app.connection_status.state == 'connected')
+                        pump(lambda: app.uploader is not None and app.connection_status.state == 'connected'
+                                      and app.delivery_check.state == 'connected')
                         self.assertIn(('/api/collector/v1/connection', 200, fixture.httpd.server_port), observed)
+                        self.assertIn(('/api/collector/v1/delivery-check', 200, fixture.httpd.server_port), observed)
+                        delivery_id = app.delivery_check.check_id
+                        delivery_ack = app.delivery_check.ack_received_at
+                        with fixture.api.transaction() as con:
+                            row = con.execute('SELECT check_id, received FROM collector_delivery_checks WHERE installation_id=?',
+                                              (app.uploader.credentials['installation_id'],)).fetchone()
+                            self.assertEqual(row['check_id'], delivery_id)
+                            self.assertEqual(__import__('collector_api').utc(row['received']), delivery_ack)
+                            self.assertEqual(con.execute('SELECT count(*) FROM collector_events').fetchone()[0], 0)
+                            self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0], 0)
+                            self.assertIsNone(con.execute('SELECT last_upload FROM collector_installations WHERE id=?',
+                                                          (app.uploader.credentials['installation_id'],)).fetchone()[0])
+                        # Same stable ID after a lost ACK must not create combat/private/DIS/queue state.
+                        self.assertEqual(app.delivery_check.check(app.uploader.credentials, delivery_id), delivery_ack)
+                        with fixture.api.transaction() as con:
+                            self.assertEqual(con.execute('SELECT count(*) FROM collector_delivery_checks').fetchone()[0], 1)
+                            self.assertEqual(con.execute('SELECT count(*) FROM collector_events').fetchone()[0], 0)
+                            self.assertEqual(con.execute('SELECT count(*) FROM collector_private_events').fetchone()[0], 0)
                         self.assertTrue(destinations)
                         self.assertTrue(all(a == ('127.0.0.1', fixture.httpd.server_port) for a in destinations))
-                        print('PROVENANCE: actual /api/collector/v1/connection HTTP 200; all socket connects isolated loopback')
+                        print('PROVENANCE: actual /api/collector/v1/connection and /delivery-check HTTP 200; exact committed delivery ACK; all socket connects isolated loopback')
                         self.assertFalse(app.browser_outstanding())
                         self.assertEqual(app.store.load(), app.uploader.credentials)
                         self.assertIsNone(app.tailer); self.assertFalse(app.upload_enabled)

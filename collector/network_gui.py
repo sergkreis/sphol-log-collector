@@ -45,8 +45,9 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         super().__init__(window, log_root, queue)
         self.identity = ttk.Label(self.header, text='Персонаж не привязан', wraplength=340)
         self.identity.pack(side='right')
-        from .connection_status import ConnectionStatus, LABELS
+        from .connection_status import ConnectionStatus, DeliveryCheck, LABELS
         self.connection_status = ConnectionStatus()
+        self.delivery_check = DeliveryCheck()
         self.connection_badge = ttk.Label(self.identity_area, text=LABELS['stopped'], wraplength=680)
         self.connection_badge.pack(anchor='w', pady=(4, 0))
         self.init_pairing_ux()
@@ -107,6 +108,8 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         if hasattr(self, 'connection_status'):
             from .connection_status import LABELS
             state = self.connection_status.tick(self.uploader.credentials if self.uploader else None, bool(self.tailer or getattr(self, 'browser_required_probe', False)))
+            if hasattr(self, 'delivery_check'):
+                self.delivery_check.tick(self.uploader.credentials if self.uploader else None, bool(self.uploader))
             colors = {'connected': '#80d8a0', 'offline': '#ef8791', 'denied': '#ef8791', 'checking': '#e8be75'}
             self.connection_badge.config(text=LABELS[state], foreground=colors.get(state, '#bcc5d3'))
         self.pair_button.config(state='disabled' if self.uploader or self.pairing or self.busy else 'normal')
@@ -240,6 +243,9 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         super().clear()
 
     def close(self):
+        for checker in (getattr(self, 'delivery_check', None), getattr(self, 'connection_status', None)):
+            if checker and hasattr(checker, 'shutdown'):
+                checker.shutdown(timeout=0.5)
         if getattr(self, 'redemption_pending', False) or getattr(self, 'recovered_token', None):
             self.stop()
             self.pairing_notice('Сбор остановлен. Дождитесь сохранения ответа SPHOL перед выходом, чтобы не потерять привязку. Если сохранение не удалось — нажмите «Повторить привязку»: повторится только сохранение.')

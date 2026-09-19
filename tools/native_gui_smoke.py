@@ -66,7 +66,9 @@ class NativeGuiSmoke(unittest.TestCase):
             db = Path(temp) / 'pending.sqlite3'
             with closing(PendingQueue(db)) as queue, patch.object(
                 socket.socket, 'connect', side_effect=AssertionError('Network forbidden in smoke test')
-            ), patch('collector.connection_status.probe', return_value=None):
+            ), patch('collector.connection_status.probe', return_value=None), \
+                    patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+                    patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')) as default_post:
                 window = tk.Tk()
                 app = None
                 callback_errors = []
@@ -140,6 +142,7 @@ class NativeGuiSmoke(unittest.TestCase):
                     self.assertEqual('Персонаж не привязан', app.identity.cget('text'))
                     self.assertFalse(app.upload_enabled)
                     self.assertIsNone(app.uploader)
+                    default_post.assert_not_called()
                     self.assertNotIn('server integration is not available', app.status.get())
                     self.assertEqual(app.code_field.get(), '')
                     self.assertTrue(app.copy_button.instate(['disabled']))

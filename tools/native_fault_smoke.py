@@ -20,7 +20,9 @@ class NativeFaultSmoke(unittest.TestCase):
             with self.subTest(stream=stream), tempfile.TemporaryDirectory() as temp, \
                     patch.object(socket.socket, 'connect', side_effect=AssertionError('No networking')), \
                     patch.object(socket.socket, 'connect_ex', side_effect=AssertionError('No networking')), \
-                    patch('collector.connection_status.probe', return_value=None):
+                    patch('collector.connection_status.probe', return_value=None), \
+                    patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+                    patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')) as default_post:
                 root = Path(temp)
                 logs = root / 'logs'; logs.mkdir()
                 source = logs / 'synthetic.txt'; source.write_bytes(HEADER)
@@ -32,6 +34,7 @@ class NativeFaultSmoke(unittest.TestCase):
                     window.report_callback_exception = lambda *args: errors.append(args)
                     try:
                         app = ConnectedApp(window, logs, queue)
+                        default_post.assert_not_called()
                         uploader = Uploader(credentials('Synthetic Pilot', 42, 's'))
                         app.uploader = uploader
                         target = app if stream == 'main' else app.expanded

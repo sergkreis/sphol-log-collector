@@ -52,6 +52,7 @@ def credentials(name, char, installation):
                 characters=[{'id':char,'name':name}])
 
 
+@patch('collector.connection_status.delivery_probe', new=lambda *args, **kwargs: '2026-01-01T00:00:00Z')
 @patch('collector.connection_status.probe', new=lambda _: None)
 class NativeSingleSmoke(unittest.TestCase):
     def test_pending_browser_consent_default_off_and_reopen(self):

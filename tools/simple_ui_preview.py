@@ -60,9 +60,12 @@ def build_app(temp):
     with patch.object(w, 'after', return_value='after'), \
             patch('collector.network_gui.CredentialStore.load', return_value=None), \
             patch('collector.connection_status.probe', return_value=None), \
+            patch('collector.connection_status.delivery_probe', return_value='2026-01-01T00:00:00Z'), \
+            patch('collector.transport.HTTPS.post', side_effect=AssertionError('Default delivery POST forbidden')) as default_post, \
             patch('webbrowser.open', return_value=True), \
             patch('collector.site_code_gui.PendingStore.load', return_value={'scope': 'combat:write'}):
         app = ConnectedApp(w, logs, q)
+        default_post.assert_not_called()
     return w, app, q, errors
 
 
