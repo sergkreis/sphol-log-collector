@@ -36,7 +36,9 @@ jobs:
           if (-not $process.WaitForExit(90000)) { $process.Kill(); throw 'Frozen smoke timed out' }
           if (Test-Path $report) { Get-Content $report }
           if ($process.ExitCode -ne 0 -or -not (Test-Path $report)) { throw 'Frozen smoke failed' }
-          if (-not (Select-String -Path $report -Pattern '^OK$' -Quiet)) { throw 'Missing successful smoke report' }
+          if (-not (Select-String -Path $report -Pattern '^OK \(skipped=1\)$' -Quiet)) { throw 'Expected success with exactly one private-fixture skip' }
+          $skips = @(Select-String -Path $report -Pattern ' \.\.\. skipped ')
+          if ($skips.Count -ne 1 -or $skips[0].Line -notmatch "^test_primary_restart_before_approval_real_http_probe .* \.\.\. skipped 'Private isolated HTTP fixture required'$") { throw 'Unexpected frozen smoke skip' }
           if (-not (Select-String -Path $report -Pattern '^test_compact_binding_capture_settings_and_callbacks .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen compact UI gate' }
           if (-not (Select-String -Path $report -Pattern '^test_unresolved_sources_do_not_starve_live_file .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen recovery isolation gate' }
           if (-not (Select-String -Path $report -Pattern '^test_multi_recovery_queuefull_commit_fault_reopen .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen combined recovery fault gate' }
