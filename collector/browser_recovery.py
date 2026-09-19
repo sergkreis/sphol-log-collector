@@ -12,7 +12,10 @@ from .transport import HTTPS, PAIR_URI, ProtocolError, encode, decode, validate_
 
 
 def validate_claim(value):
-    if not isinstance(value, dict) or set(value) not in ({'device_secret', 'verifier', 'scope', 'recovery'}, {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires'}):
+    base = {'device_secret', 'verifier', 'scope', 'recovery'}
+    proof = base | {'browser_proof', 'approval_expires'}
+    proof_with_url = proof | {'browser_uri'}
+    if not isinstance(value, dict) or set(value) not in (base, proof, proof_with_url):
         raise ProtocolError('Invalid browser recovery claim')
     if value['recovery'] is not True or value['scope'] not in ('combat:write', 'gamelogs:write'):
         raise ProtocolError('Invalid browser consent')
@@ -24,6 +27,8 @@ def validate_claim(value):
             raise ProtocolError('Invalid approval proof')
         if type(value['approval_expires']) not in (int, float) or not 0 < value['approval_expires'] < 1e12:
             raise ProtocolError('Invalid approval expiry')
+        if 'browser_uri' in value and not valid_eve_authorize_url(value['browser_uri']):
+            raise ProtocolError('Invalid EVE approval URL')
     return value
 
 
@@ -44,7 +49,12 @@ class BrowserPendingStore:
     def save(self, payload):
         existing = self.load()
         if existing is not None and existing != payload:
-            raise ProtocolError('Uncertain browser claim preserved')
+            owner = ('device_secret', 'verifier', 'scope', 'recovery', 'browser_proof')
+            same_owner = all(existing.get(k) == payload.get(k) for k in owner if k in existing or k in payload)
+            only_url_update = (same_owner and set(payload) <= {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires', 'browser_uri'}
+                               and set(existing) <= {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires', 'browser_uri'})
+            if not only_url_update:
+                raise ProtocolError('Uncertain browser claim preserved')
         raw = crypt(encode(validate_claim(payload)))
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         atomic(self.path, raw)
@@ -80,10 +90,26 @@ class BrowserRecovery:
                 or type(data['interval']) is not int or not 1 <= data['interval'] <= 30):
             raise ProtocolError('Invalid browser response')
         claim = validate_claim(dict(device_secret=data['device_secret'], verifier=verifier, scope=scope, recovery=True,
-                                    browser_proof=data['user_code'], approval_expires=time.time() + data['expires_in']))
+                                    browser_proof=data['user_code'], approval_expires=time.time() + data['expires_in'],
+                                    browser_uri=data['verification_uri']))
         self.pending.save(claim)
         if self.pending.load() != claim:
             raise ProtocolError('Pending verification failed')
+        return data['verification_uri']
+
+    def recover_url(self):
+        payload = validate_claim(self.pending.load())
+        if 'browser_proof' not in payload:
+            raise ProtocolError('Browser approval proof unavailable')
+        wire = {k: payload[k] for k in ('device_secret', 'verifier', 'browser_proof', 'scope', 'recovery')}
+        status, data = self.http.post('/api/collector/v1/pairings/browser/recover', wire)
+        if (status != 200 or not isinstance(data, dict) or set(data) != {'verification_uri', 'expires_in', 'interval'}
+                or not valid_eve_authorize_url(data['verification_uri'])
+                or type(data['expires_in']) is not int or not 1 <= data['expires_in'] <= 300
+                or type(data['interval']) is not int or not 1 <= data['interval'] <= 30):
+            raise ProtocolError('Invalid browser recovery response')
+        updated = dict(payload, browser_uri=data['verification_uri'], approval_expires=time.time() + data['expires_in'])
+        self.pending.save(updated)
         return data['verification_uri']
 
     def redeem(self):

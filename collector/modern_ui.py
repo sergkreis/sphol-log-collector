@@ -290,7 +290,7 @@ class ModernShell:
         if len(message) > 96:
             message = message[:93] + '…'
         self.label(card, message, 13, MUTED, pady=(0, 10))
-        self.primary_button = self.button(card, 'Открыть EVE', getattr(self.app, 'open_browser', self.app.pair), primary=True, pady=(8, 6))
+        self.primary_button = self.button(card, 'Открыть EVE', self.app.open_browser, primary=True, pady=(8, 6))
         self.label(card, 'Сбор не начнётся автоматически.', 13, MUTED, pady=(0, 8))
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))
 

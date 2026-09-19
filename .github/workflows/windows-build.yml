@@ -48,6 +48,7 @@ jobs:
           if (-not (Select-String -Path $report -Pattern '^test_late_redemption_waits_and_requires_explicit_resume .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen late-token storage gate' }
           if (-not (Select-String -Path $report -Pattern '^test_layout_independent_paste_event_route .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen Windows EN/RU Ctrl+V gate' }
           if (-not (Select-String -Path $report -Pattern '^test_site_code_button_dpapi_and_lost_response .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen site-code DPAPI button gate' }
+          if (-not (Select-String -Path $report -Pattern '^test_visible_open_eve_button_fresh_waiting_and_legacy_pending .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen direct-EVE visible button gate' }
           if (-not (Select-String -Path $report -Pattern '^test_native_dpapi_separate_browser_proof .* \.\.\. ok$' -Quiet)) { throw 'Missing frozen browser recovery DPAPI gate' }
       - name: Build isolated updater dummy (never collector state)
         run: python -m PyInstaller --clean --noconfirm --onefile --windowed --name UpdateDummy tools/update_dummy.py

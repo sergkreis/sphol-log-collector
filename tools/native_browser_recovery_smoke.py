@@ -5,6 +5,7 @@ import socket
 import sys
 import time
 import tempfile
+import urllib.parse
 import unittest
 from pathlib import Path
 from contextlib import ExitStack
@@ -13,6 +14,66 @@ from collector.browser_recovery import BrowserPendingStore
 
 
 class NativeBrowserRecovery(unittest.TestCase):
+    OFFICIAL_EVE_URL = 'https://login.eveonline.com/v2/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fsphol.com%2Fsso%2Feve%2Fcallback&state=collector_' + 'C'*32
+
+    def test_visible_open_eve_button_fresh_waiting_and_legacy_pending(self):
+        import tkinter as tk
+        from collector.network_gui import ConnectedApp
+        from collector.core import PendingQueue
+        from collector.pairing_ux import active_url
+        from tools.native_single_smoke import visible_button
+        with tempfile.TemporaryDirectory() as d, ExitStack() as stack:
+            if os.name != 'nt':
+                stack.enter_context(patch('collector.browser_recovery.crypt', side_effect=lambda data, **kw: data))
+                stack.enter_context(patch('collector.credentials.crypt', side_effect=lambda data, **kw: data))
+            stack.enter_context(patch.object(socket.socket, 'connect', side_effect=AssertionError('No network')))
+            stack.enter_context(patch('collector.network_gui.messagebox.askyesno', return_value=True))
+            opened = stack.enter_context(patch('collector.pairing_ux.webbrowser.open', return_value=True))
+            root = Path(d); logs = root/'Gamelogs'; logs.mkdir()
+            q = PendingQueue(root/'queue.sqlite3'); window = tk.Tk(); app = None
+            def pump(predicate):
+                until = time.monotonic()+5
+                while not predicate() and time.monotonic()<until:
+                    window.update(); time.sleep(.01)
+                self.assertTrue(predicate())
+            def destroy():
+                app.expanded.close(); app.legacy.close()
+                for callback in window.tk.call('after', 'info'): window.after_cancel(callback)
+                window.destroy(); gc.collect()
+            try:
+                app = ConnectedApp(window, logs, q); window.update()
+                before = q.count()
+                def fake_start(scope):
+                    app.browser_pending.save(dict(device_secret='a'*43, verifier='b'*43, scope=scope, recovery=True,
+                        browser_proof='c'*43, approval_expires=time.time()+120, browser_uri=self.OFFICIAL_EVE_URL))
+                    return self.OFFICIAL_EVE_URL
+                app.browser_recovery.start = fake_start
+                visible_button(window, 'Войти через EVE').invoke()
+                pump(lambda: opened.call_count == 1 and active_url(app.pairing) == self.OFFICIAL_EVE_URL and not app.busy and app.browser_job is None)
+                self.assertEqual(q.count(), before)
+                self.assertIsNone(app.tailer)
+                self.assertFalse(app.upload_enabled)
+                self.assertEqual(opened.call_args.args[0], self.OFFICIAL_EVE_URL)
+                visible_button(window, 'Открыть EVE').invoke()
+                pump(lambda: opened.call_count == 2 and app.browser_job is None)
+                self.assertEqual(opened.call_args.args[0], self.OFFICIAL_EVE_URL)
+                saved = app.browser_pending.load(); saved.pop('browser_uri'); saved['approval_expires'] = time.time()-60
+                app.browser_pending.clear(); app.browser_pending.save(saved)
+                recovered_url = self.OFFICIAL_EVE_URL.replace('C'*32, 'D'*32)
+                def fake_recover():
+                    current = app.browser_pending.load()
+                    app.browser_pending.save(dict(current, browser_uri=recovered_url, approval_expires=time.time()+120))
+                    return recovered_url
+                app.browser_recovery.recover_url = fake_recover
+                app.restore_browser(); window.update()
+                visible_button(window, 'Открыть EVE').invoke()
+                pump(lambda: opened.call_count == 3 and app.browser_job is None)
+                self.assertEqual(opened.call_args.args[0], recovered_url)
+                self.assertEqual(q.count(), before)
+            finally:
+                if app: destroy()
+                q.close()
+
     @unittest.skipUnless(os.name == 'nt', 'Native Windows DPAPI required')
     def test_native_dpapi_separate_browser_proof(self):
         with tempfile.TemporaryDirectory() as d:
@@ -88,9 +149,28 @@ class NativeBrowserRecovery(unittest.TestCase):
                         window = tk.Tk(); app = ConnectedApp(window, logs, q); window.update()
                         self.assertEqual(active_url(app.pairing), uri)
                         self.assertEqual(app.browser_pending.path.read_bytes(), saved)
-                        app.browser_button.invoke()
-                        pump(lambda: opened.call_count >= 2)
-                        self.assertEqual(fixture.request('approval', {'user_code': uri.split('#')[1], 'consent': True})[0], 200)
+                        visible_button(window, 'Открыть EVE').invoke()
+                        pump(lambda: opened.call_count >= 2 and app.browser_job is None and not app.busy)
+                        # Reproduce the released 0.3.11 disk state, then use the actual
+                        # visible control through real isolated HTTP, not a recovery stub.
+                        legacy = app.browser_pending.load()
+                        legacy.pop('browser_uri')
+                        legacy['approval_expires'] = time.time()-60
+                        app.browser_pending.save(legacy)
+                        with fixture.api.transaction() as con:
+                            con.execute('UPDATE collector_pairings SET expires=0')
+                        app.restore_browser(); window.update()
+                        visible_button(window, 'Открыть EVE').invoke()
+                        pump(lambda: opened.call_count >= 3 and app.browser_job is None and not app.busy)
+                        uri = active_url(app.pairing)
+                        self.assertEqual(opened.call_args.args[0], uri)
+                        self.assertEqual(app.browser_pending.load()['browser_uri'], uri)
+                        self.assertEqual(app.browser_pending.load()['device_secret'], legacy['device_secret'])
+                        with fixture.api.transaction() as con:
+                            self.assertEqual(con.execute('SELECT count(*) FROM collector_installations').fetchone()[0], 0)
+                        oauth_state = urllib.parse.parse_qs(urllib.parse.urlparse(uri).query)['state'][0]
+                        import eve_sso
+                        fixture.api.approve_oauth(oauth_state, eve_sso.Identity(42, 'Test Pilot', (), 9999999999, 'token'), 123)
                         pump(lambda: app.uploader is not None and app.connection_status.state == 'connected')
                         self.assertIn(('/api/collector/v1/connection', 200, fixture.httpd.server_port), observed)
                         self.assertTrue(destinations)

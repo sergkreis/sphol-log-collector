@@ -7,15 +7,17 @@ import time
 import webbrowser
 from .diagnostics import emit
 from tkinter import ttk, TclError
-from .transport import PAIR_URI, HTTPFailure, ProtocolError
+from .transport import PAIR_URI, HTTPFailure, ProtocolError, valid_eve_authorize_url
 
 
 def active_url(pairing):
     if not pairing or not getattr(pairing, 'browser', False):
         return None
     url = getattr(pairing, 'browser_uri', None)
-    if (time.monotonic() >= pairing.deadline or not isinstance(url, str)
-            or re.fullmatch(re.escape(PAIR_URI) + r'#[A-Za-z0-9_-]{43}', url) is None):
+    if time.monotonic() >= pairing.deadline or not isinstance(url, str):
+        return None
+    legacy_fragment = re.fullmatch(re.escape(PAIR_URI) + r'#[A-Za-z0-9_-]{43}', url) is not None
+    if not legacy_fragment and not valid_eve_authorize_url(url):
         return None
     return url
 
@@ -81,7 +83,11 @@ class PairingUX:
 
     def open_pairing_browser(self):
         url = active_url(self.pairing)
-        if not url or self.browser_job:
+        if not url:
+            if hasattr(self, 'pairing_message'):
+                self.pairing_message.config(text='Официальная ссылка EVE недоступна или истекла. Нажмите «Повторить привязку»: приложение проверит сохранённый запрос без нового устройства. Очередь и привязка не изменены.')
+            return
+        if self.browser_job:
             return
         owner = self.pairing
         self.browser_job = (owner, time.monotonic() + 10)

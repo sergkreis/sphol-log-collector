@@ -3,15 +3,88 @@ import os
 import sys
 import tempfile
 import http.client
+import time
+import types
 from pathlib import Path
 import unittest
 from unittest.mock import patch, Mock
-from collector.browser_recovery import BrowserRecovery, BrowserPendingStore
+from collector.browser_recovery import BrowserRecovery, BrowserPendingStore, validate_claim
 from collector.transport import ProtocolError, valid_eve_authorize_url
+from collector.browser_gui import BrowserGUI
+from collector.pairing_ux import active_url, PairingUX
 from test_site_code import Memory, CREDENTIAL
 
 
+OFFICIAL_EVE_URL = 'https://login.eveonline.com/v2/oauth/authorize?response_type=code&client_id=client&redirect_uri=https%3A%2F%2Fsphol.com%2Fsso%2Feve%2Fcallback&state=collector_' + 'B'*32
+
+
 class BrowserTests(unittest.TestCase):
+    def test_start_persists_exact_official_url(self):
+        pending, store, http = Memory(), Memory(), Mock()
+        http.post.return_value = (201, dict(device_secret='D'*43, user_code='U'*43,
+                                           verification_uri=OFFICIAL_EVE_URL, expires_in=120, interval=5))
+        self.assertEqual(BrowserRecovery(pending, store, http).start('combat:write'), OFFICIAL_EVE_URL)
+        claim = pending.load()
+        self.assertEqual(claim['browser_uri'], OFFICIAL_EVE_URL)
+        self.assertEqual(validate_claim(claim), claim)
+
+    def test_legacy_pending_recovers_official_url_without_new_device(self):
+        pending, store, http = Memory(), Memory(), Mock()
+        claim = dict(device_secret='d'*43, verifier='e'*43, scope='combat:write', recovery=True,
+                     browser_proof='f'*43, approval_expires=time.time()-60)
+        pending.save(claim)
+        http.post.return_value = (200, dict(verification_uri=OFFICIAL_EVE_URL, expires_in=120, interval=5))
+        self.assertEqual(BrowserRecovery(pending, store, http).recover_url(), OFFICIAL_EVE_URL)
+        http.post.assert_called_once_with('/api/collector/v1/pairings/browser/recover', {
+            'device_secret': claim['device_secret'], 'verifier': claim['verifier'],
+            'browser_proof': claim['browser_proof'], 'scope': 'combat:write', 'recovery': True})
+        recovered = pending.load()
+        self.assertEqual(recovered['browser_uri'], OFFICIAL_EVE_URL)
+        self.assertEqual(recovered['browser_proof'], claim['browser_proof'])
+        self.assertGreater(recovered['approval_expires'], time.time())
+        self.assertIsNone(store.load())
+
+    def test_restore_restart_uses_official_url_and_legacy_no_url_is_visible(self):
+        class App(BrowserGUI, PairingUX):
+            busy = False
+            uploader = None
+            def __init__(self, claim):
+                self.browser_pending = types.SimpleNamespace(path=types.SimpleNamespace(exists=lambda: True), load=lambda: claim)
+                self.store = Memory()
+                self.notices = []
+                self.pairing_message = Mock()
+                self.browser_recovery = Mock()
+                self.work = Mock()
+            def pairing_notice(self, text): self.notices.append(text)
+        claim = dict(device_secret='a'*43, verifier='b'*43, scope='combat:write', recovery=True,
+                     browser_proof='c'*43, approval_expires=time.time()+120, browser_uri=OFFICIAL_EVE_URL)
+        app = App(claim); app.restore_browser()
+        self.assertEqual(active_url(app.pairing), OFFICIAL_EVE_URL)
+        legacy = dict(claim); legacy.pop('browser_uri')
+        app = App(legacy); app.restore_browser(); app.open_browser()
+        self.assertIsNone(active_url(app.pairing))
+        app.work.assert_called_once_with('browser_recover_url', app.browser_recovery.recover_url)
+        self.assertEqual(app.browser_pending.load(), legacy)
+
+    def test_expired_pending_has_actionable_error_without_deletion(self):
+        class App(BrowserGUI, PairingUX):
+            busy = False
+            uploader = None
+            def __init__(self, claim):
+                self.browser_pending = types.SimpleNamespace(path=types.SimpleNamespace(exists=lambda: True), load=lambda: claim)
+                self.store = Memory()
+                self.notices = []
+                self.pairing_message = Mock()
+                self.browser_recovery = Mock()
+                self.work = Mock()
+            def pairing_notice(self, text): self.notices.append(text)
+        claim = dict(device_secret='a'*43, verifier='b'*43, scope='combat:write', recovery=True,
+                     browser_proof='c'*43, approval_expires=time.time()-1, browser_uri=OFFICIAL_EVE_URL)
+        app = App(claim); app.restore_browser(); app.open_browser()
+        self.assertIsNone(active_url(app.pairing))
+        app.work.assert_called_once_with('browser_recover_url', app.browser_recovery.recover_url)
+        self.assertEqual(app.browser_pending.load(), claim)
+
     def test_binding_and_readback_preserve_claim(self):
         for existing in (dict(CREDENTIAL, installation_id='other'), None):
             pending, store = Memory(), Memory()
@@ -62,8 +135,22 @@ class BrowserTests(unittest.TestCase):
                         uri = client.start('combat:write')
                     claim = pending.load()
                     self.assertTrue(valid_eve_authorize_url(uri))
+                    # Simulate 0.3.11 pending storage: device/verifier/proof exist,
+                    # official browser_uri is missing and the original request expired.
+                    legacy = dict(claim)
+                    legacy.pop('browser_uri')
+                    legacy['approval_expires'] = time.time()-60
+                    pending.save(legacy)
+                    with patch.object(server, 'SSO_CLIENT_ID', 'client-id'), patch.object(server, 'SSO_CLIENT_SECRET', 'secret'):
+                        recovered_uri = client.recover_url()
+                    recovered = pending.load()
+                    self.assertTrue(valid_eve_authorize_url(recovered_uri))
+                    self.assertEqual(recovered['browser_uri'], recovered_uri)
+                    self.assertEqual(recovered['browser_proof'], claim['browser_proof'])
+                    self.assertNotEqual(recovered_uri, uri)
+                    claim = recovered
                     import urllib.parse
-                    oauth_state = urllib.parse.parse_qs(urllib.parse.urlparse(uri).query)['state'][0]
+                    oauth_state = urllib.parse.parse_qs(urllib.parse.urlparse(recovered_uri).query)['state'][0]
                     import eve_sso
                     fixture.api.validate_oauth_state(oauth_state)
                     fixture.api.approve_oauth(oauth_state, eve_sso.Identity(42, 'Test Pilot', (), 9999999999, 'token'), 123)
