@@ -86,17 +86,17 @@ class ModernShell:
 
     def card(self):
         self.destroy_children()
-        outer = tk.Frame(self.frame, bg=PAGE_BG, padx=12, pady=8)
+        outer = tk.Frame(self.frame, bg=PAGE_BG, padx=10, pady=6)
         outer.pack(fill='both', expand=True)
-        card = tk.Frame(outer, bg=CARD_BG, padx=22, pady=12)
+        card = tk.Frame(outer, bg=CARD_BG, padx=18, pady=10)
         card.pack(fill='both', expand=True)
         header = tk.Frame(card, bg=CARD_BG)
         header.pack(fill='x')
         tk.Label(header, image=self.logo, bg=CARD_BG).pack(side='left')
         title = tk.Frame(header, bg=CARD_BG)
-        title.pack(side='left', padx=(12, 0))
-        tk.Label(title, text='SPHOL', bg=CARD_BG, fg=TEXT, font=font(23, 'bold')).pack(anchor='w')
-        tk.Label(title, text='Боевые журналы', bg=CARD_BG, fg=MUTED, font=font(13)).pack(anchor='w')
+        title.pack(side='left', padx=(10, 0))
+        tk.Label(title, text='SPHOL', bg=CARD_BG, fg=TEXT, font=font(21, 'bold')).pack(anchor='w')
+        tk.Label(title, text='Боевые журналы', bg=CARD_BG, fg=MUTED, font=font(12)).pack(anchor='w')
         return card
 
     def label(self, parent, text, size=16, color=TEXT, weight='normal', **pack):
@@ -109,8 +109,8 @@ class ModernShell:
         fg = PRIMARY_TEXT if primary else TEXT
         b = tk.Button(parent, text=text, command=command, bg=bg, fg=fg, activebackground=bg,
                       activeforeground=fg, relief='flat', bd=0, highlightthickness=0,
-                      font=font(12, 'bold'), padx=16, pady=8, cursor='hand2')
-        b.pack(**({'fill': 'x', 'pady': (16, 8)} | pack))
+                      font=font(12, 'bold'), padx=14, pady=6, cursor='hand2')
+        b.pack(**({'fill': 'x', 'pady': (12, 6)} | pack))
         return b
 
     def link(self, parent, text, command, **pack):
@@ -126,11 +126,11 @@ class ModernShell:
         portrait = self.portrait_image()
         tk.Label(row, image=portrait, bg=CARD_BG).pack(side='left')
         text = tk.Frame(row, bg=CARD_BG)
-        text.pack(side='left', padx=(16, 0))
+        text.pack(side='left', padx=(12, 0))
         name = self.character_name()
-        tk.Label(text, text=name, bg=CARD_BG, fg=TEXT, font=font(24, 'bold')).pack(anchor='w')
+        tk.Label(text, text=name, bg=CARD_BG, fg=TEXT, font=font(21, 'bold')).pack(anchor='w')
         if subtitle:
-            tk.Label(text, text='Выбранный персонаж', bg=CARD_BG, fg=MUTED, font=font(13)).pack(anchor='w')
+            tk.Label(text, text='Выбранный персонаж', bg=CARD_BG, fg=MUTED, font=font(12)).pack(anchor='w')
 
     def character_name(self):
         uploader = getattr(self.app, 'uploader', None)
@@ -187,11 +187,11 @@ class ModernShell:
         except Exception:
             pending = self.app.queue.count() if hasattr(self.app, 'queue') else 0
         row = tk.Frame(card, bg=CARD_BG)
-        row.pack(fill='x', pady=(8, 8))
+        row.pack(fill='x', pady=(6, 6))
         self.sent_label = tk.Label(row, text=f'Отправлено  {sent}', bg=CARD_BG, fg=TEXT, font=font(13, 'bold'))
         self.sent_label.pack(side='left')
         self.pending_label = tk.Label(row, text=f'Ждёт  {pending}', bg=CARD_BG, fg=TEXT, font=font(13, 'bold'))
-        self.pending_label.pack(side='left', padx=(70, 0))
+        self.pending_label.pack(side='left', padx=(50, 0))
 
     def update_counters(self):
         if hasattr(self, 'sent_label'):
@@ -272,15 +272,15 @@ class ModernShell:
         card = self.card()
         spacer = tk.Frame(card, bg=CARD_BG, height=12)
         spacer.pack()
-        self.label(card, 'Войдите своим персонажем EVE', 22, TEXT, 'bold', pady=(0, 14))
-        self.label(card, 'Вход откроется на официальном сайте EVE.', 15, '#a9b5c4')
-        self.primary_button = self.button(card, 'Войти через EVE', self.app.pair, primary=True, pady=(28, 18))
+        self.label(card, 'Войдите своим персонажем EVE', 21, TEXT, 'bold', pady=(0, 10))
+        self.label(card, 'Вход откроется на официальном сайте EVE.', 14, '#a9b5c4')
+        self.primary_button = self.button(card, 'Войти через EVE', self.app.pair, primary=True, pady=(22, 12))
         self.label(card, 'Собираем только боевые журналы. Сбор включается отдельно.', 13, '#a9b5c4', pady=(0, 8))
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))
 
     def render_waiting(self):
         card = self.card()
-        self.label(card, 'Вход через EVE', 21, TEXT, 'bold', pady=(22, 14))
+        self.label(card, 'Вход через EVE', 21, TEXT, 'bold', pady=(16, 10))
         try:
             message = self.app.pairing_message.cget('text')
         except Exception:
@@ -290,7 +290,7 @@ class ModernShell:
         if len(message) > 96:
             message = message[:93] + '…'
         self.label(card, message, 13, MUTED, pady=(0, 10))
-        self.primary_button = self.button(card, 'Открыть EVE', getattr(self.app, 'open_browser', self.app.pair), primary=True, pady=(10, 8))
+        self.primary_button = self.button(card, 'Открыть EVE', getattr(self.app, 'open_browser', self.app.pair), primary=True, pady=(8, 6))
         self.label(card, 'Сбор не начнётся автоматически.', 13, MUTED, pady=(0, 8))
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))
 
@@ -299,13 +299,13 @@ class ModernShell:
         self.character(card, subtitle=not offline)
         state = 'active' if active else ('offline' if offline else 'idle')
         color, conn, sending, detail = self.status_text(state)
-        self.conn_label = self.label(card, '●  ' + conn, 14, color, 'bold', pady=(0, 10))
-        self.send_label = self.label(card, sending, 14, TEXT, 'normal')
-        self.detail_label = self.label(card, detail, 12, MUTED, pady=(6, 6))
+        self.conn_label = self.label(card, '●  ' + conn, 13, color, 'bold', pady=(0, 6))
+        self.send_label = self.label(card, sending, 13, TEXT, 'normal')
+        self.detail_label = self.label(card, detail, 11, MUTED, pady=(4, 4))
         if active or offline:
-            self.primary_button = self.button(card, 'Остановить сбор', self.app.stop, pady=(8, 8))
+            self.primary_button = self.button(card, 'Остановить сбор', self.app.stop, pady=(6, 5))
         else:
-            self.primary_button = self.button(card, 'Начать сбор', self.app.start, primary=True, pady=(8, 8))
+            self.primary_button = self.button(card, 'Начать сбор', self.app.start, primary=True, pady=(6, 5))
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))
         self.counters(card)
 
@@ -323,7 +323,7 @@ class ModernShell:
 
     def render_settings(self):
         card = self.card()
-        self.label(card, f'Версия {VERSION}', 14, MUTED, pady=(34, 8))
+        self.label(card, f'Версия {VERSION}', 14, MUTED, pady=(24, 8))
         self.button(card, 'Обновить приложение', self.update_app, pady=(12, 7))
         self.button(card, 'Сменить персонажа', self.change_character, pady=(7, 7))
         self.button(card, 'Помощь', lambda: self.show('help'), pady=(7, 22))
@@ -333,7 +333,7 @@ class ModernShell:
 
     def render_help(self):
         card = self.card()
-        self.label(card, 'Помощь', 22, TEXT, 'bold', pady=(34, 18))
+        self.label(card, 'Помощь', 22, TEXT, 'bold', pady=(24, 12))
         self.label(card, '1. Войдите через EVE и выберите основного персонажа.\n2. Нажмите «Начать сбор» перед боем.\n3. Если интернета нет, записи останутся на компьютере и отправятся позже.\n4. «Остановить сбор» прекращает чтение новых строк.', 14, '#a9b5c4')
         tk.Frame(card, bg=CARD_BG).pack(fill='both', expand=True)
         self.link(card, '← Назад', lambda: self.show('settings'))
