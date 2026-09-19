@@ -100,11 +100,22 @@ class Redemption:
         return payload
 
     @observed('site.redeem')
-    def redeem(self):
+    def redeem(self, website_consent=False):
         payload = self.pending.load()
         if payload is None:
             raise ProtocolError('Missing recovery request')
-        status, data = self.http.post(ROUTE, payload)
+        from .transport import SiteCodeFailure
+        try:
+            status, data = self.http.post(ROUTE, payload)
+        except SiteCodeFailure as exc:
+            if not (website_consent is True and payload['scope'] == 'combat:write'
+                    and exc.status == 403 and exc.code == 'scope_consent_required'):
+                raise
+            # Explicitly approved compatibility retry. Keep the persisted original
+            # proof and all claim-bound metadata byte-for-byte through response loss.
+            # A restart repeats the original then this same derived request.
+            payload = dict(payload, scope='gamelogs:write')
+            status, data = self.http.post(ROUTE, payload)
         if status != 200:
             raise ProtocolError('Unexpected redemption response')
         result = validate_credentials(data)

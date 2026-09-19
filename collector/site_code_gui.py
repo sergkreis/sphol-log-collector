@@ -8,6 +8,7 @@ from tkinter import ttk, StringVar, messagebox
 from .site_code import PendingStore, Redemption
 from .transport import Uploader, SiteCodeFailure, PAIR_URI
 from .diagnostics import emit
+from .clipboard import bind_paste, paste
 
 
 class SiteCodeControls:
@@ -32,10 +33,13 @@ class SiteCodeControls:
         self.code = StringVar(master=app.window)
         row = ttk.Frame(frame)
         row.pack(fill='x', pady=6)
-        self.entry = ttk.Entry(row, textvariable=self.code, width=30)
+        self.entry = ttk.Entry(row, textvariable=self.code, width=24)
         self.entry.pack(side='left')
+        bind_paste(self.entry)
+        self.paste_button = ttk.Button(row, text='Вставить', width=8, command=lambda: paste(self.entry))
+        self.paste_button.pack(side='left', padx=4)
         # New website codes have one supported consent; recovery keeps its saved scope.
-        self.scope = StringVar(master=app.window, value='combat:write')
+        self.scope = StringVar(master=app.window, value='gamelogs:write')
         self.button = ttk.Button(row, text='Привязать', command=self.submit)
         self.button.pack(side='left', padx=8)
         self.links = ttk.Frame(frame)
@@ -115,8 +119,18 @@ class SiteCodeControls:
             self.attempts = 0
         self.auto_retry = False
         self.label.config(text='Сохраняем защищённый запрос и связываемся с SPHOL… Сбор выключен.')
+        website_consent = False
+        if self.uncertain and self.scope.get() == 'combat:write':
+            if automatic:
+                return
+            website_consent = messagebox.askyesno('Восстановление кода с сайта',
+                'Повторить сохранённый код с разрешением, которое вы подтвердили на сайте? '
+                'Приложение собирает и отправляет только боевые события. '
+                'Исходный запрос сохраняется; существующая привязка и очередь не меняются.', parent=app.window)
+            if not website_consent:
+                return
         try:
-            self.redemption.prepare(self.code.get(), self.scope.get() if self.uncertain else 'combat:write')
+            self.redemption.prepare(self.code.get(), self.scope.get() if self.uncertain else 'gamelogs:write')
         except Exception as exc:
             emit('site.pending.save', 'error', error=exc)
             self.uncertain = self.pending.path.exists()
@@ -129,7 +143,8 @@ class SiteCodeControls:
         self.refresh()
         def run():
             try:
-                self.results.put((self.redemption.redeem(), None))
+                result = self.redemption.redeem(website_consent=True) if website_consent else self.redemption.redeem()
+                self.results.put((result, None))
             except Exception as exc:
                 self.results.put((None, exc))
         threading.Thread(target=run, daemon=True).start()
@@ -139,7 +154,8 @@ class SiteCodeControls:
         self.button.config(state='disabled' if self.busy or time.monotonic() < self.next_try else 'normal')
         self.abandon_button.config(state='normal' if self.uncertain and not self.busy else 'disabled')
         self.entry.config(state='disabled' if self.uncertain else 'normal')
-        self.button.config(text='Повторить восстановление' if self.uncertain else 'Привязать')
+        self.paste_button.config(state='disabled' if self.uncertain else 'normal')
+        self.button.config(text='Повторить восстановление' if self.uncertain else 'Привязать', width=0 if self.uncertain else 10)
         if (self.app.uploader and not self.uncertain) or (hasattr(self.app, 'pairing_panel') and self.app.pairing_panel.winfo_manager() == 'pack'):
             self.frame.pack_forget()
         else:
@@ -154,12 +170,14 @@ class SiteCodeControls:
             self.get_code_button.pack_forget()
             self.entry_label.pack_forget()
             self.entry.pack_forget()
+            self.paste_button.pack_forget()
             self.legacy_button.pack_forget()
         else:
             self.step.config(text='Привяжите персонажа')
             self.get_code_button.pack(anchor='w', pady=(0, 12), after=self.step)
             self.entry_label.pack(anchor='w', after=self.get_code_button)
             self.entry.pack(side='left', before=self.button)
+            self.paste_button.pack(side='left', before=self.button, padx=4)
             if hasattr(self.app, 'danger_area') and isinstance(self.app.danger_area, ttk.Frame):
                 self.legacy_button.pack(anchor='w', pady=8, before=self.app.danger_area)
             else:

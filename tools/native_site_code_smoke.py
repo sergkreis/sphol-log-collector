@@ -17,6 +17,31 @@ from collector.site_code_gui import SiteCodeControls
 
 @unittest.skipUnless(os.name == 'nt', 'Native Windows DPAPI required')
 class NativeSiteCodeSmoke(unittest.TestCase):
+    def test_layout_independent_paste_event_route(self):
+        import tkinter as tk
+        from tkinter import ttk
+        from collector.clipboard import bind_paste
+        root = tk.Tk()
+        try:
+            entry = ttk.Entry(root)
+            entry.pack()
+            bind_paste(entry)
+            root.update()
+            entry.focus_force()
+            root.update()
+            root.clipboard_clear()
+            root.clipboard_append('SYNTHETIC')
+            for keysym in ('v', 'Cyrillic_em'):
+                entry.delete(0, 'end')
+                entry.insert(0, 'replace')
+                entry.selection_range(0, 'end')
+                entry.event_generate('<KeyPress>', state=4, keycode=86, keysym=keysym)
+                root.update()
+                self.assertEqual(entry.get(), 'SYNTHETIC', keysym)
+        finally:
+            root.destroy()
+            gc.collect()
+
     def test_site_code_button_dpapi_and_lost_response(self):
         import tkinter as tk
         from tkinter import ttk
@@ -35,7 +60,7 @@ class NativeSiteCodeSmoke(unittest.TestCase):
             release = threading.Event()
             requests = []
             credential = {'access_token':'SYNTHETIC_'*8, 'token_type':'Bearer',
-                'scope':'combat:write', 'installation_id':'a'*32,
+                'scope':'gamelogs:write', 'installation_id':'a'*32,
                 'characters':[{'id':42,'name':'Synthetic Pilot'}],
                 'expires_at':'2099-01-01T00:00:00Z'}
             class Transport:
@@ -53,7 +78,7 @@ class NativeSiteCodeSmoke(unittest.TestCase):
                 self.assertTrue(control.busy)
                 saved = PendingStore(control.pending.path).load()
                 assert saved is not None
-                self.assertEqual(saved['scope'], 'combat:write')
+                self.assertEqual(saved['scope'], 'gamelogs:write')
                 self.assertNotIn(code.encode(), control.pending.path.read_bytes())
                 self.assertNotIn(saved['verifier'].encode(), control.pending.path.read_bytes())
                 release.set()

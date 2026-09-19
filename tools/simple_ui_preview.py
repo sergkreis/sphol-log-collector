@@ -79,7 +79,7 @@ def render(destination):
                     assert not app.dashboard.warning.winfo_viewable()
                     assert not app.expanded.summary.winfo_viewable()
                     if scene == 'unbound':
-                        assert ui.scope.get() == 'combat:write'
+                        assert ui.scope.get() == 'gamelogs:write'
                         assert ui.entry.winfo_viewable() and ui.get_code_button.winfo_viewable()
                         assert not ui.review_button.winfo_viewable() and not ui.abandon_button.winfo_viewable()
                         ui.get_code_button.invoke()
@@ -130,9 +130,24 @@ def render(destination):
                         assert app.dashboard.ack_at is None
                     if scene == 'recovery':
                         ui.redemption = Mock()
-                        with patch('collector.site_code_gui.threading.Thread'):
+                        # Exercise both consent decisions without a blocking Tk modal.
+                        with patch('collector.site_code_gui.messagebox.askyesno', return_value=False) as consent, \
+                                patch('collector.site_code_gui.threading.Thread') as worker:
                             ui.button.invoke()
+                            consent.assert_called_once()
+                            ui.redemption.prepare.assert_not_called()
+                            worker.assert_not_called()
+                        assert pending.read_bytes() == b'SYNTHETIC pending fixture; not DPAPI'
+                        assert app.uploader.credentials == credentials
+                        with patch('collector.site_code_gui.messagebox.askyesno', return_value=True) as consent, \
+                                patch('collector.site_code_gui.threading.Thread') as worker:
+                            ui.button.invoke()
+                            consent.assert_called_once()
+                            worker.assert_called_once()
+                            worker.call_args.kwargs['target']()
                         ui.redemption.prepare.assert_called_once_with('', 'combat:write')
+                        ui.redemption.redeem.assert_called_once_with(website_consent=True)
+                        assert app.uploader.credentials == credentials
                         assert pending.read_bytes() == b'SYNTHETIC pending fixture; not DPAPI'
                     assert list(q.db.execute('SELECT * FROM pending')) == original
                     assert not errors, errors
