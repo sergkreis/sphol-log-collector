@@ -1,5 +1,6 @@
 """Durable primary browser flow; old site recovery has priority, never deletion."""
 import time
+import ssl
 from types import SimpleNamespace
 from .browser_recovery import BrowserPendingStore, BrowserRecovery
 from .transport import PAIR_URI, Uploader, valid_eve_authorize_url
@@ -41,6 +42,7 @@ class BrowserGUI:
             self.pairing_notice('Защищённый запрос не читается. Он сохранён; проверьте устройства на сайте и обратитесь в поддержку. Новая привязка заблокирована.')
 
     def begin_browser(self):
+        self.login_error = ''
         self.pairing = SimpleNamespace(browser=True, durable=True, scope='combat:write', browser_uri=None, deadline=0)
         self.pairing_notice('Откроется официальный вход EVE. После выбора персонажа вернитесь в приложение; сбор останется выключен.')
         self.work('browser_start', lambda: self.browser_recovery.start('combat:write'))
@@ -79,8 +81,17 @@ class BrowserGUI:
             self.browser_paused = True
             if kind == 'browser_start' and not self.browser_outstanding():
                 self.pairing = None
-            self.pairing_notice('Не удалось завершить вход. Проверьте интернет и нажмите «Открыть EVE». Данные сохранены.')
+            if isinstance(error, ssl.SSLCertVerificationError):
+                message = 'Не удалось проверить сертификат SPHOL.'
+            elif isinstance(error, ssl.SSLError):
+                message = 'Ошибка защищённого соединения с SPHOL.'
+            else:
+                message = 'Не удалось завершить вход. Проверьте соединение.'
+            action = 'Открыть EVE' if self.pairing else 'Войти через EVE'
+            self.login_error = message + ' Повторите через «' + action + '». Если ошибка повторяется — отправьте диагностику в поддержку.'
+            self.pairing_notice(self.login_error)
         elif kind in ('browser_start', 'browser_recover_url'):
+            self.login_error = ''
             self.browser_paused = False
             if valid_eve_authorize_url(result):
                 claim = self.browser_pending.load()

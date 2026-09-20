@@ -86,6 +86,7 @@ class HTTPS:
         started = time.monotonic()
         correlation = secrets.randbelow(2147483647)
         stage = 'http.connect_tls'
+        outcome = 'error'
         try:
             emit(stage, 'start', correlation=correlation)
             connection.connect()
@@ -116,12 +117,14 @@ class HTTPS:
                 raise HTTPFailure(status, retry_after(retry))
             if response.getheader('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
                 raise ProtocolError('Expected JSON response')
-            return status, decode(raw)
+            data = decode(raw)
+            outcome = 'ok'
+            return status, data
         except Exception as exc:
             emit(stage, 'error', error=exc, correlation=correlation)
             raise
         finally:
-            emit('http.complete', duration_ms=min(2147483647, int((time.monotonic() - started) * 1000)), correlation=correlation)
+            emit('http.complete', outcome, duration_ms=min(2147483647, int((time.monotonic() - started) * 1000)), correlation=correlation)
             connection.close()
 
 

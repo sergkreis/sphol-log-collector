@@ -232,6 +232,12 @@ class ModernShell:
             self.render_bound(active=(state == 'active'), offline=(state == 'offline'))
 
     def update_dynamic(self, state):
+        if state == 'first' and hasattr(self, 'login_error_label'):
+            self.login_error_label.config(text=getattr(self.app, 'login_error', ''))
+        elif state == 'waiting' and hasattr(self, 'login_error_label'):
+            error = getattr(self.app, 'login_error', '')
+            message = error or self.app.pairing_message.cget('text')
+            self.login_error_label.config(text=message, fg=DANGER if error else MUTED)
         if state in ('active', 'offline', 'idle'):
             conn_color, conn, delivery, sending, detail = self.status_text(state)
             self.conn_label.config(text=conn, fg=conn_color)
@@ -312,6 +318,7 @@ class ModernShell:
         spacer.pack()
         self.label(card, 'Войдите своим персонажем EVE', 21, TEXT, 'bold', pady=(0, 10))
         self.label(card, 'Вход откроется на официальном сайте EVE.', 14, '#a9b5c4')
+        self.login_error_label = self.label(card, getattr(self.app, 'login_error', ''), 11, DANGER)
         self.primary_button = self.button(card, 'Войти через EVE', self.app.pair, primary=True, pady=(22, 12))
         self.label(card, 'Собираем только боевые журналы. Сбор включается отдельно.', 13, '#a9b5c4', pady=(0, 8))
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))
@@ -327,7 +334,7 @@ class ModernShell:
             message = 'Откройте официальный EVE-вход и вернитесь в приложение.'
         if len(message) > 96:
             message = message[:93] + '…'
-        self.label(card, message, 13, MUTED, pady=(0, 10))
+        self.login_error_label = self.label(card, getattr(self.app, 'login_error', '') or message, 11, DANGER if getattr(self.app, 'login_error', '') else MUTED, pady=(0, 10))
         self.primary_button = self.button(card, 'Открыть EVE', self.app.open_browser, primary=True, pady=(8, 6))
         self.label(card, 'Сбор не начнётся автоматически.', 13, MUTED, pady=(0, 8))
         self.settings_button = self.link(card, 'Настройки', lambda: self.show('settings'))

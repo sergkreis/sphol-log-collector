@@ -5,6 +5,7 @@ if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == '--synthetic-smoke-report':
         # Explicit isolated test mode: temporary sources/state and blocked network.
         import unittest
+        from tools.native_tls_smoke import TLSDiagnostics
         from tools.native_gui_smoke import NativeGuiSmoke
         from tools.native_single_smoke import NativeSingleSmoke
         from tools.connection_preview import NativeConnectionSmoke
@@ -18,7 +19,7 @@ if __name__ == "__main__":
         with open(sys.argv[2], 'w', encoding='utf-8') as report:
             result = unittest.TextTestRunner(stream=report, verbosity=2).run(
                 unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromTestCase(case)
-                                   for case in (NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke, RecoveryTk, NativeSiteCodeSmoke, NativeCompactSmoke, RecoveryIsolation, SchedulerTests, NativeFaultSmoke, NativeBrowserRecovery)))
+                                   for case in (TLSDiagnostics, NativeGuiSmoke, NativeSingleSmoke, NativeConnectionSmoke, RecoveryTk, NativeSiteCodeSmoke, NativeCompactSmoke, RecoveryIsolation, SchedulerTests, NativeFaultSmoke, NativeBrowserRecovery)))
         raise SystemExit(0 if result.wasSuccessful() else 1)
     if len(sys.argv) == 6 and sys.argv[1] == '--apply-update':
         from collector.updater import helper

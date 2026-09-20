@@ -1,0 +1,1 @@
+from tools.native_tls_smoke import TLSDiagnostics

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import ssl
 import sys
 import tempfile
 import threading
@@ -33,9 +34,9 @@ ERRORS = frozenset(('permission', 'missing', 'not_directory', 'disk_full',
     'sharing_violation', 'timeout', 'tls', 'network', 'encoding', 'protocol',
     'queue_full', 'file_limit', 'unsafe_file', 'changed_file', 'os_error', 'internal'))
 CLASSES = frozenset(('PermissionError', 'FileNotFoundError', 'NotADirectoryError',
-    'TimeoutError', 'SSLError', 'OSError', 'UnicodeDecodeError', 'ProtocolError',
+    'TimeoutError', 'SSLError', 'SSLCertVerificationError', 'OSError', 'UnicodeDecodeError', 'ProtocolError',
     'HTTPFailure', 'SiteCodeFailure', 'QueueFull', 'ReadFailure', 'HTTPException'))
-NUMBERS = frozenset(('errno', 'winerror', 'status', 'count', 'accepted', 'rejected',
+NUMBERS = frozenset(('verify_code', 'errno', 'winerror', 'status', 'count', 'accepted', 'rejected',
     'failures', 'delay', 'exists', 'accessible', 'unattributed', 'windows_major',
     'windows_minor', 'windows_build', 'duration_ms', 'correlation', 'recovery', 'sources', 'stream'))
 _sink = None
@@ -72,7 +73,10 @@ def exception_fields(exc):
     native = {2: 'missing', 3: 'missing', 5: 'permission',
               32: 'sharing_violation', 33: 'sharing_violation',
               39: 'disk_full', 112: 'disk_full', 267: 'not_directory'}
-    if isinstance(exc, TimeoutError): category = 'timeout'
+    if isinstance(exc, ssl.SSLError):
+        category = 'tls'
+        name = 'SSLCertVerificationError' if isinstance(exc, ssl.SSLCertVerificationError) else 'SSLError'
+    elif isinstance(exc, TimeoutError): category = 'timeout'
     elif type(winerror) is int and winerror in native: category = native[winerror]
     elif number in (errno.EACCES, errno.EPERM): category = 'permission'
     elif number == errno.ENOENT: category = 'missing'
@@ -85,7 +89,9 @@ def exception_fields(exc):
     elif name == 'ReadFailure': category = getattr(exc, 'reason', 'os_error')
     elif isinstance(exc, ConnectionError) or name in ('gaierror', 'HTTPException'): category = 'network'
     elif isinstance(exc, OSError): category = 'os_error'
-    return {'error': category, 'exception': name if name in CLASSES else 'OSError' if isinstance(exc, OSError) else None,
+    verify_code = getattr(exc, 'verify_code', None) if isinstance(exc, ssl.SSLCertVerificationError) else None
+    return {'verify_code': verify_code if type(verify_code) is int and 0 <= verify_code <= 2147483647 else None,
+            'error': category, 'exception': name if name in CLASSES else 'OSError' if isinstance(exc, OSError) else None,
             'errno': number, 'winerror': winerror, 'status': getattr(exc, 'status', None),
             'site_error': getattr(exc, 'code', None) if name == 'SiteCodeFailure' else None}
 
