@@ -9,6 +9,7 @@ import random
 import re
 import secrets
 import ssl
+from .tls_context import create_context
 import time
 import threading
 import urllib.parse
@@ -82,7 +83,7 @@ class HTTPS:
             if not opaque(token):
                 raise ProtocolError('Invalid credential')
             headers['Authorization'] = 'Bearer ' + token
-        connection = http.client.HTTPSConnection('sphol.com', timeout=15, context=ssl.create_default_context())
+        connection = http.client.HTTPSConnection('sphol.com', timeout=15, context=create_context())
         started = time.monotonic()
         correlation = secrets.randbelow(2147483647)
         stage = 'http.connect_tls'

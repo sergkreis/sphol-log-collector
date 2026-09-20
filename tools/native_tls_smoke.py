@@ -9,6 +9,24 @@ from collector.browser_gui import BrowserGUI
 from collector.modern_ui import ModernShell
 
 class TLSDiagnostics(unittest.TestCase):
+    def test_native_context_and_fail_closed(self):
+        import sys
+        from collector.tls_context import create_context
+        context = create_context()
+        self.assertTrue(context.check_hostname)
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        if sys.platform == 'win32':
+            import truststore
+            self.assertIsInstance(context, truststore.SSLContext)
+        with patch('collector.tls_context.sys.platform', 'win32'):
+            backend = Mock()
+            backend.SSLContext.side_effect = RuntimeError('unavailable')
+            with patch.dict('sys.modules', {'truststore': backend}), patch('collector.tls_context.ssl.create_default_context') as fallback:
+                with self.assertRaises(RuntimeError): create_context()
+                fallback.assert_not_called()
+            with patch.dict('sys.modules', {'truststore': None}):
+                with self.assertRaises(ImportError): create_context()
+
     def test_ssl_precedes_errno_and_subclasses(self):
         class PrivateTLS(ssl.SSLError): pass
         class PrivateCert(ssl.SSLCertVerificationError): pass
