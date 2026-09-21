@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 import uuid
-from .core import safe_open, parse_line
+from .core import safe_open, parse_line, FILE_WINDOW
 
 
 class CaptureStopped(Exception):
@@ -45,6 +45,7 @@ class LocalCapture:
             raise ValueError('Only Gamelogs is permitted')
         self.root = root.resolve(strict=True)
         self.files = {}
+        self.skipped_files = 0
         self.count = self.used = 0
         self.closed = False
         self.max_line = max_line
@@ -82,8 +83,10 @@ class LocalCapture:
 
     def paths(self):
         paths = list(self.root.glob('*.txt'))
-        if len(paths) > 512:
-            raise CaptureStopped('Более 512 файлов Gamelogs: локальная запись остановлена.')
+        self.skipped_files = max(0, len(paths) - FILE_WINDOW)
+        if self.skipped_files:
+            paths.sort(key=lambda item: item.stat().st_mtime_ns, reverse=True)
+            del paths[FILE_WINDOW:]
         return sorted(paths)
 
     def metadata(self, status):

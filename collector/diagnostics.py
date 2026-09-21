@@ -37,7 +37,7 @@ CLASSES = frozenset(('PermissionError', 'FileNotFoundError', 'NotADirectoryError
     'TimeoutError', 'SSLError', 'SSLCertVerificationError', 'OSError', 'UnicodeDecodeError', 'ProtocolError',
     'HTTPFailure', 'SiteCodeFailure', 'QueueFull', 'ReadFailure', 'HTTPException'))
 NUMBERS = frozenset(('verify_code', 'errno', 'winerror', 'status', 'count', 'accepted', 'rejected',
-    'failures', 'delay', 'exists', 'accessible', 'unattributed', 'windows_major',
+    'failures', 'delay', 'exists', 'accessible', 'unattributed', 'skipped', 'windows_major',
     'windows_minor', 'windows_build', 'duration_ms', 'correlation', 'recovery', 'sources', 'stream'))
 _sink = None
 

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import unittest
-from collector.core import PendingQueue, QueueFull, Tailer, parse_line, safe_open
+from collector.core import FILE_WINDOW, PendingQueue, QueueFull, Tailer, parse_line, safe_open
 
 START = datetime(2030, 1, 1, tzinfo=timezone.utc)
 HEADER = 'Слушатель: Synthetic Pilot\nСеанс начат: 2030.01.01 00:00:00\n'.encode()
@@ -185,6 +185,21 @@ class CollectorTests(unittest.TestCase):
         self.append(p, HEADER + COMBAT)
         tail.poll()
         self.assertEqual(self.queue.batch()[0]['listener'], 'Synthetic Pilot')
+
+
+    def test_crowded_folder_reads_newest_window(self):
+        import os
+        for i in range(FILE_WINDOW + 20):
+            p = self.log(name='old%03d.txt' % i)
+            os.utime(p, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000 + i))
+        fresh = self.log(name='fresh.txt')
+        os.utime(fresh, ns=(2_000_000_000_000_000_000, 2_000_000_000_000_000_000))
+        tail = self.tail()
+        self.assertEqual(tail.skipped_files, 21)
+        self.assertEqual(len(tail.paths()), FILE_WINDOW)
+        self.assertIn(fresh, tail.paths())
+        self.append(fresh)
+        self.assertEqual(tail.poll(), 1)
 
 
 if __name__ == '__main__':

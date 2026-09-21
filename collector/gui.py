@@ -5,7 +5,7 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from .diagnostics import initialize, emit
-from .core import PendingQueue, Tailer, QueueFull
+from .core import PendingQueue, Tailer, QueueFull, FILE_WINDOW
 from .local_capture import LocalCapture, CaptureStopped
 
 
@@ -274,9 +274,15 @@ class App:
         if self.tailer:
             try:
                 count = self.tailer.poll()
-                if count or self.tailer.unattributed_files:
-                    emit('capture.poll', count=count, unattributed=self.tailer.unattributed_files)
-                self.status.set('Сбор включён — читаются новые боевые события.' if not self.tailer.unattributed_files else 'Сбор включён. Отдельные события ждут проверенного заголовка персонажа; остальные журналы читаются.')
+                skipped = self.tailer.skipped_files
+                if count or self.tailer.unattributed_files or skipped:
+                    emit('capture.poll', count=count, unattributed=self.tailer.unattributed_files, skipped=skipped)
+                if self.tailer.unattributed_files:
+                    self.status.set('Сбор включён. Отдельные события ждут проверенного заголовка персонажа; остальные журналы читаются.')
+                elif skipped:
+                    self.status.set('Сбор включён — читаются %d самых свежих журналов; %d старых пропущены.' % (FILE_WINDOW, skipped))
+                else:
+                    self.status.set('Сбор включён — читаются новые боевые события.')
             except QueueFull:
                 self.status.set('Сбор приостановлен: очередь заполнена. Эти данные ещё не отправлены.')
             except Exception as exc:

@@ -21,6 +21,7 @@ class ReadFailure(OSError):
         self.reason = reason
 
 MAX_LINE = 8192
+FILE_WINDOW = 512
 LINE = re.compile(r'^\[\s*(\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2})\s*\]\s*\(combat\)\s*(.+)$')
 TAG = re.compile(r'<[^>]*>')
 
@@ -196,6 +197,7 @@ class Tailer:
         self.run_id = uuid.uuid4().hex
         self.files = {}
         self.rejected = 0
+        self.skipped_files = 0
         self.checkpoint_key = hashlib.sha256(
             (str(self.root) + ':' + parser.__module__ + ':' + parser.__name__ + ':1').encode()).hexdigest()
         self.stopped = False
@@ -281,8 +283,10 @@ class Tailer:
 
     @observed('logs.paths', successes=False)
     def paths(self):
-        # No recursion; never enumerate Chatlogs. Bound resource use visibly.
-        paths = []
+        # No recursion; never enumerate Chatlogs. Bound resource use visibly:
+        # veteran folders hold thousands of inert logs, so read the newest
+        # window instead of refusing to capture at all.
+        found = []
         with os.scandir(self.root) as entries:
             for entry in entries:
                 if not os.path.normcase(entry.name).endswith('.txt'):
@@ -290,10 +294,16 @@ class Tailer:
                 p = self.root / entry.name
                 if p.is_symlink() or p.resolve().parent != self.root:
                     continue
-                paths.append(p)
-                if len(paths) > 512:
-                    raise ReadFailure('file_limit')
-        return sorted(paths)
+                try:
+                    stamp = entry.stat().st_mtime_ns
+                except OSError:
+                    continue
+                found.append((stamp, p))
+        self.skipped_files = max(0, len(found) - FILE_WINDOW)
+        if self.skipped_files:
+            found.sort(key=lambda item: item[0], reverse=True)
+            del found[FILE_WINDOW:]
+        return sorted(p for _, p in found)
 
     @staticmethod
     def listener(f):
