@@ -24,6 +24,18 @@ def documents():
         ctypes.windll.ole32.CoTaskMemFree(result)
 
 
+def start_problem_text(exc, log_root):
+    """Visible one-line reason for a failed Start; the compact UI has no status line."""
+    from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
+    if isinstance(exc, PendingCaptureUnavailable):
+        return PENDING_CAPTURE_WARNING
+    if isinstance(exc, NotADirectoryError) or getattr(exc, 'errno', None) == 2:
+        return f'Сбор не начат: не найдена папка журналов EVE {log_root}. Запустите EVE, войдите персонажем и попробуйте снова.'
+    if isinstance(exc, PermissionError):
+        return f'Сбор не начат: нет доступа к папке журналов {log_root}. Закройте программы, блокирующие файлы, и попробуйте снова.'
+    return f'Сбор не начат: не удалось прочитать журналы в {log_root}. Сохраните отчёт для поддержки в настройках.'
+
+
 class App:
     def __init__(self, window, log_root, queue):
         self.window, self.log_root, self.queue = window, log_root, queue
@@ -216,17 +228,20 @@ class App:
 
     def start(self):
         if getattr(self, '_poll_failed', False):
+            self.start_problem = 'Сбор остановлен после ошибки. Перезапустите приложение.'
             return
         if self.tailer is not None:
             return
         try:
             self.tailer = Tailer(self.log_root, self.queue)
             emit('capture.start', count=len(self.tailer.files))
+            self.start_problem = ''
             self.status.set('Сбор включён — читаются новые боевые события.')
         except (OSError, ValueError) as exc:
             emit('capture.start', 'error', error=exc)
             from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
             self.status.set(PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор выключен — проверьте доступ к папке журналов.')
+            self.start_problem = start_problem_text(exc, self.log_root)
         self.capture_controls()
 
     def stop(self):

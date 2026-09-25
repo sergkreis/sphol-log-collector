@@ -199,14 +199,20 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         self.begin_browser()
 
     def start(self):
+        self.start_problem = ''
         if getattr(self, '_poll_failed', False):
+            self.start_problem = 'Сбор остановлен после ошибки. Перезапустите приложение.'
             return
         if blocked(self):
+            self.start_problem = 'Сбор не начат: завершается привязка по коду с сайта. Откройте настройки.'
+            emit('capture.start', 'pending')
             return
         if active_url(self.pairing):
             self.open_pairing_browser()
             return
         if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
+            self.start_problem = 'Сбор не начат: привязка к SPHOL ещё не завершена. Подождите минуту или перезапустите приложение.'
+            emit('capture.start', 'pending')
             return
         if not self.uploader:
             self.resume_after_pair = False
@@ -214,6 +220,7 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
             return
         if getattr(self, 'browser_required_probe', False) and self.connection_status.state != 'connected':
             self.pairing_notice('Дождитесь подтверждения подключения к SPHOL, затем нажмите «Начать сбор». Сбор выключен.')
+            self.start_problem = 'Дождитесь подтверждения подключения к SPHOL, затем нажмите «Начать сбор».'
             self.refresh_controls()
             return
         if hasattr(self, 'pairing_panel'):

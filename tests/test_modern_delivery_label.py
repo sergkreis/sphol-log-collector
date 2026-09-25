@@ -44,3 +44,14 @@ class ModernDeliveryLabelTests(unittest.TestCase):
                 s.app.connection_status.state = state
                 self.assertEqual(s.status_text('active')[0], color)
                 self.assertEqual(s.status_text('idle')[0], color)
+
+    def test_idle_shows_start_problem_in_danger_color(self):
+        s = self.shell()
+        s.app.start_problem = 'Сбор не начат: не найдена папка журналов EVE X.'
+        self.assertEqual(s.status_text('idle')[4], s.app.start_problem)
+        s.update_dynamic('idle')
+        self.assertEqual(s.detail_label.kw['text'], s.app.start_problem)
+        self.assertEqual(s.detail_label.kw['fg'], '#ef8791')
+        s.app.start_problem = ''
+        s.update_dynamic('idle')
+        self.assertEqual(s.detail_label.kw['text'], 'Нажмите «Начать сбор» перед боем.')

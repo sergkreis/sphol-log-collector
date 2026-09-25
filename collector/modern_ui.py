@@ -243,7 +243,7 @@ class ModernShell:
             self.conn_label.config(text=conn, fg=conn_color)
             self.delivery_label.config(text=delivery)
             self.send_label.config(text=sending)
-            self.detail_label.config(text=detail)
+            self.detail_label.config(text=detail, fg=DANGER if getattr(self.app, 'start_problem', '') and state == 'idle' else MUTED)
             self.update_counters()
 
     def pending_count(self):
@@ -310,6 +310,9 @@ class ModernShell:
             if ack is None:
                 return color, conn, delivery, 'Отправка: ждёт первой записи', 'Подтверждённых отправок ещё не было.'
             return color, conn, delivery, 'Отправка: всё подтверждено', self.last_ack_text()
+        problem = getattr(self.app, 'start_problem', '')
+        if problem:
+            return self.connection_color(), conn, delivery, 'Отправка: выключена', problem
         return self.connection_color(), conn, delivery, 'Отправка: выключена', 'Нажмите «Начать сбор» перед боем.'
 
     def render_first(self):
