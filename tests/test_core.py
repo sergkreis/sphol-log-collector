@@ -197,7 +197,7 @@ class CollectorTests(unittest.TestCase):
         tail = self.tail()
         self.assertEqual(tail.skipped_files, 21)
         self.assertEqual(len(tail.paths()), FILE_WINDOW)
-        self.assertIn(fresh, tail.paths())
+        self.assertIn(fresh.resolve(), tail.paths())
         self.append(fresh)
         self.assertEqual(tail.poll(), 1)
 

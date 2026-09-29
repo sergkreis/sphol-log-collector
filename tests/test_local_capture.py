@@ -23,7 +23,7 @@ class LocalCaptureTests(unittest.TestCase):
             os.utime(fresh, ns=(2 * 10 ** 18, 2 * 10 ** 18))
             with closing(LocalCapture(root, Path(temp) / 'private', consent=True)) as c:
                 self.assertEqual(c.skipped_files, 21)
-                self.assertIn(fresh, c.paths())
+                self.assertIn(fresh.resolve(), c.paths())
                 with fresh.open('ab') as f:
                     f.write(b'[ 2099.01.01 00:00:00 ] (combat) Synthetic event\n')
                 c.poll()
