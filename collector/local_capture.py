@@ -82,12 +82,17 @@ class LocalCapture:
             raise
 
     def paths(self):
-        paths = list(self.root.glob('*.txt'))
-        self.skipped_files = max(0, len(paths) - FILE_WINDOW)
+        found = []
+        for path in self.root.glob('*.txt'):
+            try:
+                found.append((path.stat().st_mtime_ns, path))
+            except OSError:
+                continue  # Vanished or locked between listing and stat.
+        self.skipped_files = max(0, len(found) - FILE_WINDOW)
         if self.skipped_files:
-            paths.sort(key=lambda item: item.stat().st_mtime_ns, reverse=True)
-            del paths[FILE_WINDOW:]
-        return sorted(paths)
+            found.sort(key=lambda item: item[0], reverse=True)
+            del found[FILE_WINDOW:]
+        return sorted(path for _, path in found)
 
     def metadata(self, status):
         data = {'schema': 1, 'started_utc': self.started,

@@ -65,6 +65,15 @@ class CallbackTests(unittest.TestCase):
         self.assertIsNone(self.app.tailer)
         self.assertNotIn('sensitive', self.app.status.set.call_args.args[0])
 
+    def test_file_limit_explains_restart(self):
+        from collector.core import ReadFailure
+        self.app.tailer.poll.side_effect = ReadFailure('file_limit')
+        self.app.tick()
+        self.assertIsNone(self.app.tailer)
+        message = self.app.status.set.call_args.args[0]
+        self.assertIn('слишком много новых журналов', message)
+        self.assertIn('Начать сбор', message)
+
     def test_stop_is_disconnected(self):
         self.app.stop()
         self.assertIsNone(self.app.tailer)

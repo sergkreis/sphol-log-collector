@@ -9,6 +9,26 @@ from collector.local_capture import LocalCapture, CaptureStopped
 
 
 class LocalCaptureTests(unittest.TestCase):
+    def test_crowded_folder_records_newest_window(self):
+        from collector.core import FILE_WINDOW
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'Gamelogs'
+            root.mkdir()
+            for i in range(FILE_WINDOW + 20):
+                old = root / ('old%03d.txt' % i)
+                old.write_bytes(b'old history\n')
+                os.utime(old, ns=(10 ** 18, 10 ** 18 + i))
+            fresh = root / 'fresh.txt'
+            fresh.write_bytes(b'')
+            os.utime(fresh, ns=(2 * 10 ** 18, 2 * 10 ** 18))
+            with closing(LocalCapture(root, Path(temp) / 'private', consent=True)) as c:
+                self.assertEqual(c.skipped_files, 21)
+                self.assertIn(fresh, c.paths())
+                with fresh.open('ab') as f:
+                    f.write(b'[ 2099.01.01 00:00:00 ] (combat) Synthetic event\n')
+                c.poll()
+                self.assertEqual(c.count, 1)
+
     def test_all_types_utf8_rotation_restart(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / 'Gamelogs'

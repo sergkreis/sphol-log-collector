@@ -290,7 +290,12 @@ class App:
                 self.tailer = None  # Preserve durable recovery envelope on faults.
                 self.stop()
                 from .core import PendingCaptureUnavailable, PENDING_CAPTURE_WARNING
-                self.status.set(PENDING_CAPTURE_WARNING if isinstance(exc, PendingCaptureUnavailable) else 'Сбор выключен после ошибки чтения. Сохраните отчёт для поддержки; очередь сохранена.')
+                if isinstance(exc, PendingCaptureUnavailable):
+                    self.status.set(PENDING_CAPTURE_WARNING)
+                elif getattr(exc, 'reason', None) == 'file_limit':
+                    self.status.set('Сбор остановлен: за этот сеанс появилось слишком много новых журналов. Нажмите «Начать сбор», чтобы продолжить; очередь сохранена.')
+                else:
+                    self.status.set('Сбор выключен после ошибки чтения. Сохраните отчёт для поддержки; очередь сохранена.')
         self.pending.set(f'В очереди на компьютере: {self.queue.count()} событий')
         if hasattr(self, 'main_button'):
             from .queue_status import queue_summary
