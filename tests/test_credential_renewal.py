@@ -179,10 +179,25 @@ class RenewalTests(unittest.TestCase):
             self.assertEqual(pending.path.read_bytes(), claim)
             self.assertEqual(store.load_proof(), old)
             fixture.stop_http()
-            fixture.httpd = server.ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
-            fixture.thread = threading.Thread(target=fixture.httpd.serve_forever, daemon=True)
-            fixture.thread.start()
-            fixture.api = collector_api.Collector(fixture.store.path)
+            # Private fixture code stays in the private server repository. Restart
+            # the HTTP authority in a NEW interpreter over the same durable DB/key.
+            import json
+            ready = Path(fixture.store.path).parent / 'restart-ready.json'
+            restarted = subprocess.Popen([sys.executable, str(source/'tests'/'renewal_restart_http_fixture.py'),
+                str(fixture.store.path), str(ready)], stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            def stop_restarted():
+                restarted.communicate(input=b'\n', timeout=35)
+                self.assertEqual(restarted.returncode, 0)
+            stack.callback(stop_restarted)
+            deadline = time.monotonic()+10
+            while not ready.exists() and restarted.poll() is None and time.monotonic()<deadline:
+                time.sleep(.02)
+            self.assertTrue(ready.exists(), 'Fresh server did not become ready')
+            endpoint = json.loads(ready.read_text())
+            self.assertEqual(endpoint['pid'], restarted.pid)
+            self.assertNotEqual(endpoint['pid'], os.getpid())
+            fixture.httpd.server_port = endpoint['port']
             # Fresh client interpreter: no cached credential, proof or service object.
             script = '''
 import http.client, json, os, sys

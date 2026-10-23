@@ -1,4 +1,8 @@
-"""Published v0.3.9 queue classes, verbatim from a45d659c835af336afd884e460c2e00d50ed2103."""
+"""Independent released queue fixture (historical filename retained).
+QueueFull/PendingQueue AST verified equal to released v0.3.17 core.py at
+2b0b9f60fc0c032b9fda4d0afb3161cf688103e2. Never seed migration with candidate code.
+Originally extracted from v0.3.9 a45d659c835af336afd884e460c2e00d50ed2103.
+"""
 import json
 import os
 import sqlite3

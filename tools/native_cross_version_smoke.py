@@ -16,11 +16,11 @@ import sqlite3
 from collector.credentials import CredentialStore
 from collector.updater import ASSET, clean_env, download
 
-# Published v0.3.10; update manifest and SOURCE-COMMIT read back.
-# PendingQueue AST remains compatible with the retained released_v039_queue fixture.
-OLD_SOURCE_COMMIT = '39f8c19530945a35f9ebe1a9574b3e622ea0bfa6'
-OLD_VERSION = '0.3.10'
-OLD_SHA = '4ce28e1a201ccf748deb0a9c311bbd6b35e62b0ac6231d112b485c0cecc0b96c'
+# Published v0.3.17; API digest, checksum, manifest and source receipt verified.
+# PendingQueue fixture is independently pinned to the released source, not candidate.
+OLD_SOURCE_COMMIT = '2b0b9f60fc0c032b9fda4d0afb3161cf688103e2'
+OLD_VERSION = '0.3.17'
+OLD_SHA = '8f9e3abd3765d2e5e3b884efca36c9f7941d115617d5b6cd1933a2502428b9ac'
 
 
 from contextlib import contextmanager
@@ -123,6 +123,8 @@ def main():
     assert receipt == OLD_SOURCE_COMMIT, 'Released source receipt mismatch'
     sums = download(base + 'SHA256SUMS.txt', 4096).decode('utf-8-sig').split()
     assert sums == [OLD_SHA, ASSET], 'Released checksum manifest mismatch'
+    manifest = json.loads(download(base + 'update-manifest.json', 16384).decode('utf-8-sig'))
+    assert manifest['version'] == OLD_VERSION and manifest['sha256'] == OLD_SHA
     old = download(base + ASSET, 128 * 1024 * 1024)
     assert hashlib.sha256(old).hexdigest() == OLD_SHA
     # Firewall program filters reject Windows 8.3 TEMP aliases (RUNNER~1).

@@ -110,6 +110,41 @@ class NativeLoginRecovery(unittest.TestCase):
             self.assertIsNone(app.tailer); self.assertFalse(app.upload_enabled)
             self.assertEqual(http.call_count, 3)
 
+    def test_renewal_readback_failure_reopen_preserves_claim_and_queue(self):
+        from collector.browser_recovery import BrowserRecovery, BrowserPendingStore
+        from collector.credentials import CredentialStore
+        with ExitStack() as stack:
+            app, old, saved, rows = self.fixture(stack, expired=True)
+            fresh = dict(old, access_token='z'*43, expires_at='2099-01-01T00:00:00Z')
+            uri = ('https://login.eveonline.com/v2/oauth/authorize?response_type=code&client_id=client'
+                   '&redirect_uri=https%3A%2F%2Fsphol.com%2Fsso%2Feve%2Fcallback&state=collector_' + 'B'*32)
+            def response(path, body):
+                if path.endswith('/browser'):
+                    return 200, dict(device_secret='d'*43, user_code='e'*43, verification_uri=uri, expires_in=120, interval=5)
+                return 200, fresh
+            stack.enter_context(patch.object(app.browser_recovery.http, 'post', side_effect=response))
+            stack.enter_context(patch('collector.network_gui.messagebox.askyesno', return_value=True))
+            stack.enter_context(patch('collector.network_gui.webbrowser.open', return_value=True))
+            visible_button(app.window, 'Войти через EVE').invoke()
+            self.pump(app, lambda: not app.busy and app.browser_outstanding())
+            app.browser_paused = True
+            claim = app.browser_pending.path.read_bytes()
+            load = app.store.load
+            with patch.object(app.store, 'load', side_effect=lambda **kw: load(**kw) if kw.get('allow_expired') else None):
+                app.retry_browser()
+                self.pump(app, lambda: not app.busy)
+            self.assertEqual(app.browser_pending.path.read_bytes(), claim)
+            self.assertEqual(app.store.load(), fresh)  # save succeeded; readback failed
+            self.assertEqual(app.browser_recovery.unsaved_result, fresh)
+            # Reopen persisted DPAPI stores, without any cached result. Separate
+            # interpreter/server restart is gated by the private HTTP source test.
+            reopened = BrowserRecovery(BrowserPendingStore(app.browser_pending.path),
+                CredentialStore(app.store.path), app.browser_recovery.http)
+            self.assertEqual(reopened.redeem(), fresh)
+            self.assertIsNone(reopened.pending.load())
+            self.assertEqual(list(app.queue.db.execute('SELECT * FROM pending')), rows)
+            self.assertIsNone(app.tailer); self.assertFalse(app.upload_enabled)
+
     def test_visible_pending_retry_preserves_original_owner_queue_and_consent(self):
         with ExitStack() as stack:
             app, credentials, saved, rows = self.fixture(stack, pending=True)
