@@ -35,7 +35,8 @@ class NativeBrowserRecovery(unittest.TestCase):
                 until = time.monotonic()+5
                 while not predicate() and time.monotonic()<until:
                     window.update(); time.sleep(.01)
-                self.assertTrue(predicate())
+                self.assertTrue(predicate(), f'opened={opened.call_count}, busy={app.busy}, '
+                                f'paused={app.browser_paused}, notice={app.login_error}')
             def destroy():
                 app.expanded.close(); app.legacy.close()
                 for callback in window.tk.call('after', 'info'): window.after_cancel(callback)
@@ -49,6 +50,20 @@ class NativeBrowserRecovery(unittest.TestCase):
                         browser_proof='c'*43, approval_expires=time.time()+120, browser_uri=self.OFFICIAL_EVE_URL))
                     return self.OFFICIAL_EVE_URL
                 app.browser_recovery.start = fake_start
+                # Keep the real redeem/parser and model the server's explicit
+                # pending/expired answers. Reopen must probe token replay first;
+                # an unmocked transport hits the socket guard and correctly stops.
+                protocol_calls = []
+                def token_response(path, body):
+                    self.assertEqual(path, '/api/collector/v1/pairings/token')
+                    claim = app.browser_pending.load()
+                    self.assertEqual(body, {k: claim[k] for k in
+                        ('device_secret', 'verifier', 'scope', 'recovery')})
+                    expired = claim['approval_expires'] < time.time()
+                    protocol_calls.append('expired_token' if expired else 'authorization_pending')
+                    return ((410, {'error': 'expired_token'}) if expired else
+                            (400, {'error': 'authorization_pending'}))
+                stack.enter_context(patch.object(app.browser_recovery.http, 'post', side_effect=token_response))
                 visible_button(window, 'Войти через EVE').invoke()
                 pump(lambda: opened.call_count == 1 and active_url(app.pairing) == self.OFFICIAL_EVE_URL and not app.busy and app.browser_job is None)
                 self.assertEqual(q.count(), before)
@@ -61,15 +76,38 @@ class NativeBrowserRecovery(unittest.TestCase):
                 saved = app.browser_pending.load(); saved.pop('browser_uri'); saved['approval_expires'] = time.time()-60
                 app.browser_pending.clear(); app.browser_pending.save(saved)
                 recovered_url = self.OFFICIAL_EVE_URL.replace('C'*32, 'D'*32)
+                protocol_calls.clear()
                 def fake_recover():
+                    self.assertEqual(protocol_calls, ['expired_token'])
+                    protocol_calls.append('recover_url')
                     current = app.browser_pending.load()
+                    self.assertEqual(current, saved)
                     app.browser_pending.save(dict(current, browser_uri=recovered_url, approval_expires=time.time()+120))
                     return recovered_url
                 app.browser_recovery.recover_url = fake_recover
                 app.restore_browser(); window.update()
+                # Reproduce the original fixture failure deterministically: an
+                # unknown transport failure must NOT permit URL recovery.
+                pending_bytes = app.browser_pending.path.read_bytes()
+                with patch.object(app.browser_recovery.http, 'post',
+                                  side_effect=AssertionError('No network')) as failed_transport:
+                    visible_button(window, 'Открыть EVE').invoke()
+                    pump(lambda: app.browser_paused and not app.busy and app.browser_job is None)
+                    self.assertEqual(failed_transport.call_args.args[0], '/api/collector/v1/pairings/token')
+                    self.assertEqual(opened.call_count, 2)
+                    self.assertEqual(protocol_calls, [])
+                    self.assertEqual(app.browser_pending.path.read_bytes(), pending_bytes)
+                    self.assertIsNone(app.store.load_proof())
                 visible_button(window, 'Открыть EVE').invoke()
                 pump(lambda: opened.call_count == 3 and app.browser_job is None)
                 self.assertEqual(opened.call_args.args[0], recovered_url)
+                self.assertEqual(protocol_calls[:2], ['expired_token', 'recover_url'])
+                current = app.browser_pending.load()
+                for key in ('device_secret', 'verifier', 'scope', 'recovery', 'browser_proof'):
+                    self.assertEqual(current[key], saved[key])
+                self.assertIsNone(app.store.load_proof())
+                self.assertIsNone(app.tailer)
+                self.assertFalse(app.upload_enabled)
                 self.assertEqual(q.count(), before)
             finally:
                 if app: destroy()
