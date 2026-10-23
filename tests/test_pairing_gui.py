@@ -103,9 +103,11 @@ class PairingCallbacks(unittest.TestCase):
 
     def test_unpair_clears(self):
         self.ready()
+        self.app.queue.count.return_value = 0
         with patch.object(gui.messagebox, 'askyesno', return_value=True):
             self.app.unpair()
         self.assert_cleared()
+        self.app.queue.clear.assert_not_called()
 
     def test_pair_failure_preserves_existing_upload_and_credentials(self):
         old = self.app.uploader = Mock(credentials={'characters': [], 'scope': 'gamelogs:write'})

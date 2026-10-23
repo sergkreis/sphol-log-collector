@@ -203,6 +203,9 @@ class ModernShell:
     def state(self):
         if self.screen != 'main':
             return self.screen
+        from .site_code_gui import blocked
+        if blocked(self.app):
+            return 'first'  # Primary action resumes the saved claim, not a new pairing.
         if getattr(self.app, 'pairing', None) or getattr(self.app, 'busy', False) or getattr(self.app, 'recovered_token', None):
             return 'waiting'
         if not getattr(self.app, 'uploader', None):
@@ -232,6 +235,8 @@ class ModernShell:
             self.render_bound(active=(state == 'active'), offline=(state == 'offline'))
 
     def update_dynamic(self, state):
+        if state == 'settings' and hasattr(self, 'update_status_label'):
+            self.update_status_label.config(text=self.app.updates.label.cget('text'))
         if state == 'first' and hasattr(self, 'login_error_label'):
             self.login_error_label.config(text=getattr(self.app, 'login_error', ''))
         elif state == 'waiting' and hasattr(self, 'login_error_label'):
@@ -374,6 +379,7 @@ class ModernShell:
         card = self.card()
         self.label(card, f'Версия {VERSION}', 14, MUTED, pady=(24, 8))
         self.button(card, 'Обновить приложение', self.update_app, pady=(12, 7))
+        self.update_status_label = self.label(card, self.app.updates.label.cget('text'), 11, MUTED)
         self.button(card, 'Сменить персонажа', self.change_character, pady=(7, 7))
         self.button(card, 'Помощь', lambda: self.show('help'), pady=(7, 22))
         self.label(card, 'В помощи — короткая инструкция.', 14, MUTED)

@@ -43,7 +43,8 @@ class NativeBrowserRecovery(unittest.TestCase):
             try:
                 app = ConnectedApp(window, logs, q); window.update()
                 before = q.count()
-                def fake_start(scope):
+                def fake_start(scope, renewal=None):
+                    self.assertIsNone(renewal)  # Empty installation, not a replacement.
                     app.browser_pending.save(dict(device_secret='a'*43, verifier='b'*43, scope=scope, recovery=True,
                         browser_proof='c'*43, approval_expires=time.time()+120, browser_uri=self.OFFICIAL_EVE_URL))
                     return self.OFFICIAL_EVE_URL

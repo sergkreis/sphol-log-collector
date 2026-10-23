@@ -41,13 +41,18 @@ class BrowserGUI:
             self.browser_paused = True
             self.pairing_notice('Защищённый запрос не читается. Он сохранён; проверьте устройства на сайте и обратитесь в поддержку. Новая привязка заблокирована.')
 
-    def begin_browser(self):
+    def begin_browser(self, renewal=None):
         self.login_error = ''
-        self.pairing = SimpleNamespace(browser=True, durable=True, scope='combat:write', browser_uri=None, deadline=0)
+        scope = renewal['scope'] if renewal else 'combat:write'
+        self.pairing = SimpleNamespace(browser=True, durable=True, scope=scope, browser_uri=None, deadline=0)
         self.pairing_notice('Откроется официальный вход EVE. После выбора персонажа вернитесь в приложение; сбор останется выключен.')
-        self.work('browser_start', lambda: self.browser_recovery.start('combat:write'))
+        self.work('browser_start', lambda: self.browser_recovery.start(scope, renewal=renewal))
 
     def open_browser(self):
+        if self.browser_outstanding() and getattr(self, 'browser_paused', False) and not self.busy:
+            # A lost redemption response must be retried before URL recovery.
+            self.retry_browser()
+            return
         if active_url(self.pairing):
             self.open_pairing_browser()
             return
@@ -86,7 +91,7 @@ class BrowserGUI:
             elif isinstance(error, ssl.SSLError):
                 message = 'Ошибка защищённого соединения с SPHOL.'
             else:
-                message = 'Не удалось завершить вход. Проверьте соединение.'
+                message = 'Не удалось завершить вход. Сохранённые ключ, запрос и очередь не удалены; новое устройство не создаётся.'
             action = 'Открыть EVE' if self.pairing else 'Войти через EVE'
             self.login_error = message + ' Повторите через «' + action + '». Если ошибка повторяется — отправьте диагностику в поддержку.'
             self.pairing_notice(self.login_error)

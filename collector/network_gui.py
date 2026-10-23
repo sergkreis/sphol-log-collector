@@ -76,12 +76,19 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
         self.unpair_button = ttk.Button(self.danger_area, text='Удалить привязку…', command=self.unpair)
         self.unpair_button.pack(anchor='w', pady=4)
         try:
-            credentials = self.store.load()
+            credentials = self.store.load_proof()
             if credentials:
-                self.uploader = Uploader(credentials)
-                self.show_identity()
+                from .transport import expiry
+                if expiry(credentials['expires_at']) <= time.time():
+                    self.login_error = 'Ключ истёк. Нажмите «Войти через EVE» для восстановления прежнего устройства. Очередь сохранена; сбор выключен.'
+                    self.connection.config(text=self.login_error)
+                else:
+                    self.uploader = Uploader(credentials)
+                    self.show_identity()
         except Exception:
-            self.connection.config(text='Сохранённая привязка недоступна или истекла. Удалите её и привяжите персонажа заново.')
+            self.login_error = ('Сохранённый ключ повреждён или недоступен. Ключ и очередь сохранены. '
+                                'Не удаляйте их; обратитесь в поддержку для восстановления прежнего устройства.')
+            self.connection.config(text=self.login_error)
         self.refresh_controls()
         window.after(250, self.network_tick)
         from .expanded_gui import ExpandedControls
@@ -180,23 +187,58 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
                 self.results.put((kind, None, error, attempt))
         threading.Thread(target=run, daemon=True).start()
 
+    def login_notice(self, text):
+        """Publish action feedback to the currently visible modern login screen."""
+        self.login_error = text
+        self.pairing_notice(text)
+        if hasattr(self, 'modern'):
+            self.modern.refresh()
+
     def pair(self):
         if blocked(self):
+            controls = self.site_codes
+            if controls.busy:
+                self.login_notice('Восстанавливаем сохранённый вход. Дождитесь ответа; сбор выключен.')
+                return
+            # Retry the original proof, never allocate a second installation or
+            # silently substitute a newly selected character for queued evidence.
+            if self.queue.count() and not self.uploader:
+                try:
+                    if self.store.load() is None:
+                        raise ValueError('Unknown queue owner')
+                except Exception:
+                    self.login_notice('Не удалось подтвердить владельца очереди. Ключ и запрос сохранены; обратитесь в поддержку для восстановления прежнего устройства.')
+                    return
+            if controls.scope.get() != 'combat:write' and not messagebox.askyesno(
+                    'Продолжить вход?', 'Повторить сохранённый запрос для прежнего персонажа? '
+                    'Новая привязка не создаётся. Очередь сохранится, сбор останется выключен.', parent=self.window):
+                return
+            controls.submit()
+            self.login_notice(controls.login_status())
             return
         if self.browser_outstanding():
             self.retry_browser()
             return
         if self.busy or self.pairing or getattr(self, 'recovered_token', None) or getattr(self, 'redemption_uncertain', False):
+            self.login_notice('Вход ещё выполняется. Дождитесь ответа; сбор выключен.')
             return
-        if self.queue.count() and not self.uploader:
+        try:
+            proof = self.store.load_proof()
+        except Exception:
+            self.login_notice('Сохранённый ключ повреждён или недоступен. Новая привязка заблокирована; очередь сохранена. Обратитесь в поддержку.')
+            return
+        backlog = self.queue.count() or any(
+            getattr(self, name, None) and getattr(self, name).queue.count()
+            for name in ('expanded', 'legacy'))
+        if backlog and not self.uploader and proof is None:
             self.resume_after_pair = False
-            self.pairing_notice('Есть непривязанная очередь. Она сохранена; новая привязка остановлена для защиты данных. Обратитесь в поддержку — не удаляйте очередь для повтора.')
+            self.login_notice('Есть очередь прежнего устройства. Она сохранена; обратитесь в поддержку для восстановления доступа. Не удаляйте ключ и очередь.')
             return
         if not messagebox.askyesno('Войти через EVE?', 'Открыть официальный сайт EVE для выбора основного персонажа? После входа SPHOL безопасно выдаст ключ приложению. Сбор не начнётся, пока вы отдельно не нажмёте «Начать сбор». Пароль здесь не вводится.'):
             self.resume_after_pair = False
             return
         self.pair_attempt = getattr(self, 'pair_attempt', 0) + 1
-        self.begin_browser()
+        self.begin_browser(renewal=proof)
 
     def start(self):
         self.start_problem = ''
@@ -274,15 +316,26 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
             return
         if self.busy or getattr(self, 'recovered_token', None) or (getattr(self, 'expanded', None) and self.expanded.busy):
             return
-        if not messagebox.askyesno('Удалить привязку?', 'Удалить текущий локальный ключ и текущую очередь событий? Прежняя привязка наблюдений и её очередь сохранятся. Отозвать доступ устройства на сайте нужно отдельно.'):
+        # Both visible and legacy callers must preserve every delivery namespace.
+        # Character switching is not permission to discard unacknowledged data.
+        queues = [self.queue]
+        for name in ('expanded', 'legacy'):
+            control = getattr(self, name, None)
+            if control is not None:
+                queues.append(control.queue)
+        if any(queue.count() for queue in queues):
+            messagebox.showwarning('Очередь не пуста',
+                'Есть неотправленные записи. Привязка и все очереди сохранены. '
+                'Смена персонажа заблокирована; обратитесь в поддержку для восстановления прежнего устройства.',
+                parent=self.window)
+            return
+        if not messagebox.askyesno('Удалить привязку?', 'Удалить текущий локальный ключ? Прежняя привязка наблюдений и её очередь сохранятся. Отозвать доступ устройства на сайте нужно отдельно.'):
             return
         self.stop()
         self.store.clear()
-        self.queue.clear()
         expanded = getattr(self, 'expanded', None)
         if expanded:
-            expanded.store.clear()
-            expanded.queue.clear()
+            # Dormant secondary credentials are recovery evidence, not disposable.
             expanded.uploader = expanded.pairing = None
             expanded.code.set('')
         self.uploader = self.pairing = None

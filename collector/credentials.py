@@ -55,7 +55,7 @@ class CredentialStore:
                 os.unlink(name)
 
     @observed('credential.load')
-    def load(self):
+    def load(self, *, allow_expired=False):
         try:
             with safe_open.__wrapped__(self.path) as stream:
                 raw = stream.read(65537)
@@ -63,7 +63,11 @@ class CredentialStore:
             return None
         if not raw or len(raw) > 65536:
             raise OSError('Invalid protected credential file')
-        return validate_credentials(decode(crypt(raw, decrypt=True)))
+        return validate_credentials(decode(crypt(raw, decrypt=True)), allow_expired=allow_expired)
+
+    def load_proof(self):
+        """Validated possession evidence only; never upload authorization."""
+        return self.load(allow_expired=True)
 
     def clear(self):
         self.path.unlink(missing_ok=True)

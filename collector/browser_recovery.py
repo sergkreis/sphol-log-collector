@@ -15,7 +15,7 @@ def validate_claim(value):
     base = {'device_secret', 'verifier', 'scope', 'recovery'}
     proof = base | {'browser_proof', 'approval_expires'}
     proof_with_url = proof | {'browser_uri'}
-    if not isinstance(value, dict) or set(value) not in (base, proof, proof_with_url):
+    if not isinstance(value, dict) or set(value) - {'renewal'} not in (base, proof, proof_with_url):
         raise ProtocolError('Invalid browser recovery claim')
     if value['recovery'] is not True or value['scope'] not in ('combat:write', 'gamelogs:write'):
         raise ProtocolError('Invalid browser consent')
@@ -29,6 +29,11 @@ def validate_claim(value):
             raise ProtocolError('Invalid approval expiry')
         if 'browser_uri' in value and not valid_eve_authorize_url(value['browser_uri']):
             raise ProtocolError('Invalid EVE approval URL')
+    if 'renewal' in value:
+        old = validate_credentials(value['renewal'], allow_expired=True)
+        if (old['scope'] != value['scope'] or len(old['characters']) != 1
+                or not re.fullmatch(r'[0-9a-f]{32}', old['installation_id'])):
+            raise ProtocolError('Invalid renewal proof')
     return value
 
 
@@ -49,10 +54,10 @@ class BrowserPendingStore:
     def save(self, payload):
         existing = self.load()
         if existing is not None and existing != payload:
-            owner = ('device_secret', 'verifier', 'scope', 'recovery', 'browser_proof')
+            owner = ('device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'renewal')
             same_owner = all(existing.get(k) == payload.get(k) for k in owner if k in existing or k in payload)
-            only_url_update = (same_owner and set(payload) <= {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires', 'browser_uri'}
-                               and set(existing) <= {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires', 'browser_uri'})
+            only_url_update = (same_owner and set(payload) <= {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires', 'browser_uri', 'renewal'}
+                               and set(existing) <= {'device_secret', 'verifier', 'scope', 'recovery', 'browser_proof', 'approval_expires', 'browser_uri', 'renewal'})
             if not only_url_update:
                 raise ProtocolError('Uncertain browser claim preserved')
         raw = crypt(encode(validate_claim(payload)))
@@ -70,18 +75,27 @@ class BrowserRecovery:
         self.pending, self.store = pending, store
         self.http = http or HTTPS()
 
-    def start(self, scope):
+    def start(self, scope, renewal=None):
         if self.pending.load() is not None:
             raise ProtocolError('Uncertain browser claim preserved; retry redemption')
-        if self.store.load() is not None:
+        existing = self.store.load_proof() if hasattr(self.store, 'load_proof') else self.store.load()
+        if renewal is not None:
+            validate_credentials(renewal, allow_expired=True)
+            if (existing != renewal or renewal['scope'] != scope or len(renewal['characters']) != 1
+                    or not re.fullmatch(r'[0-9a-f]{32}', renewal['installation_id'])):
+                raise ProtocolError('Invalid renewal proof')
+        elif existing is not None:
             raise ProtocolError('Existing binding preserved')
         if scope not in ('combat:write', 'gamelogs:write'):
             raise ProtocolError('Invalid scope')
         verifier = secrets.token_urlsafe(32)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
-        status, data = self.http.post('/api/collector/v1/pairings/browser', dict(
+        request = dict(
             challenge=challenge, challenge_method='S256', scope=scope, recovery=True, direct_eve=True,
-            client_version=VERSION, device_label='SPHOL Windows collector'))
+            client_version=VERSION, device_label='SPHOL Windows collector')
+        if renewal is not None:
+            request['renewal'] = dict(installation_id=renewal['installation_id'], old_token=renewal['access_token'])
+        status, data = self.http.post('/api/collector/v1/pairings/browser', request)
         if (status not in (200, 201) or not isinstance(data, dict)
                 or set(data) != {'device_secret', 'user_code', 'verification_uri', 'expires_in', 'interval'}
                 or not valid_eve_authorize_url(data['verification_uri'])
@@ -92,6 +106,8 @@ class BrowserRecovery:
         claim = validate_claim(dict(device_secret=data['device_secret'], verifier=verifier, scope=scope, recovery=True,
                                     browser_proof=data['user_code'], approval_expires=time.time() + data['expires_in'],
                                     browser_uri=data['verification_uri']))
+        if renewal is not None:
+            claim['renewal'] = renewal
         self.pending.save(claim)
         if self.pending.load() != claim:
             raise ProtocolError('Pending verification failed')
@@ -123,12 +139,17 @@ class BrowserRecovery:
         result = validate_credentials(data)
         if result['scope'] != payload['scope'] or len(result['characters']) != 1:
             raise ProtocolError('Consent mismatch')
-        existing = self.store.load()
-        if existing is not None and existing != result:
+        old = payload.get('renewal')
+        if old is not None and any(result[k] != old[k] for k in ('installation_id', 'characters', 'scope')):
+            raise ProtocolError('Renewal identity mismatch')
+        self.unsaved_result = result
+        existing = self.store.load_proof() if hasattr(self.store, 'load_proof') else self.store.load()
+        if existing != result and (existing != old or (old is None and existing is not None)):
             raise ProtocolError('Existing binding preserved')
-        if existing is None:
+        if existing != result:
             self.store.save(result)
         if self.store.load() != result:
             raise ProtocolError('Credential verification failed')
         self.pending.clear()
+        self.unsaved_result = None
         return result

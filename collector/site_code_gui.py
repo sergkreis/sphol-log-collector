@@ -127,6 +127,18 @@ class SiteCodeControls:
         if app.uploader and not self.uncertain:
             self.label.config(text='Существующая привязка сохранена. Для другого устройства используйте отдельную копию приложения.')
             return
+        if not self.uncertain:
+            try:
+                proof = app.store.load_proof()
+                backlog = app.queue.count() or any(
+                    getattr(app, name, None) and getattr(app, name).queue.count()
+                    for name in ('expanded', 'legacy'))
+                if proof is not None or backlog:
+                    self.label.config(text='Существующий ключ или очередь сохранены. Используйте «Войти через EVE» для восстановления прежнего устройства; новый код заблокирован.')
+                    return
+            except Exception:
+                self.label.config(text='Ключ недоступен. Новая привязка заблокирована; очередь сохранена. Обратитесь в поддержку.')
+                return
         if getattr(app, 'updates', None) and app.updates.busy:
             return
         if not automatic:
@@ -224,6 +236,15 @@ class SiteCodeControls:
                 self.app.capture_area.pack(fill='x', after=self.app.identity_area)
 
 
+    def login_status(self):
+        # Modern UI has no legacy retry/abandon controls. Never direct pilots to
+        # hidden buttons or suggest deleting the proof to make login work.
+        if self.busy:
+            return 'Восстанавливаем сохранённый вход. Дождитесь ответа; сбор выключен.'
+        if time.monotonic() < self.next_try:
+            return 'Вход не подтверждён. Подождите немного и нажмите «Войти через EVE». Запрос и очередь сохранены.'
+        return 'Вход не завершён. Нажмите «Войти через EVE», чтобы повторить сохранённый запрос. Если ошибка повторяется — обратитесь в поддержку.'
+
     def tick(self):
         try:
             result, error = self.results.get_nowait()
@@ -248,6 +269,7 @@ class SiteCodeControls:
                 self.auto_retry = False
                 self.app.uploader = Uploader(result)
                 self.app.upload_enabled = False
+                self.app.login_error = ''
                 self.uncertain = False
                 self.app.show_identity()
                 self.label.config(text='Привязка сохранена. Для сбора нажмите «Начать сбор».')
@@ -257,6 +279,8 @@ class SiteCodeControls:
             self.submit(automatic=True)
         self.refresh()
         self.app.window.after(250, self.tick)
+        if self.uncertain and hasattr(self.app, 'login_notice'):
+            self.app.login_notice(self.login_status())
 
 
 def blocked(app):

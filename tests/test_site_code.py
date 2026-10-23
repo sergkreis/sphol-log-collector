@@ -33,7 +33,12 @@ class SiteTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as d, patch.object(root, 'after'), patch('collector.site_code_gui.threading.Thread'):
                 app = Mock(window=root, network_area=root, settings=root, store=Memory(), busy=False, pairing=None,
                            tailer=None, uploader=None, recovered_token=None, updates=None)
+                # Model a genuinely empty installation, not truthy Mock state.
+                app.store = CredentialStore(Path(d)/'credentials.dpapi')
                 app.queue.path = Path(d)/'queue.sqlite3'
+                app.queue.count.return_value = 0
+                app.expanded = app.legacy = None
+                app.browser_outstanding.return_value = False
                 ui = SiteCodeControls(app)
                 ui.redemption = Mock()
                 ui.code.set(CODE)
@@ -132,10 +137,52 @@ class SiteTests(unittest.TestCase):
             path.write_bytes(b'corrupt')
             with self.assertRaises(OSError): PendingStore(path).load()
 
+    def test_new_code_guard_rejects_proof_backlog_and_read_errors(self):
+        from collector.site_code_gui import SiteCodeControls
+        for state in ('proof', 'corrupt', 'primary', 'expanded', 'legacy', 'queue_error'):
+            with self.subTest(state=state):
+                ui = SiteCodeControls.__new__(SiteCodeControls)
+                app = ui.app = Mock(busy=False, pairing=None, tailer=None, uploader=None,
+                                    recovered_token=None, updates=None, expanded=None, legacy=None)
+                app.browser_outstanding.return_value = False
+                app.store = Mock(spec=CredentialStore)
+                app.store.load_proof.return_value = None
+                app.queue.count.return_value = 0
+                if state == 'proof':
+                    app.store.load_proof.return_value = dict(CREDENTIAL, expires_at='2000-01-01T00:00:00Z')
+                elif state == 'corrupt':
+                    app.store.load_proof.side_effect = OSError('Synthetic unreadable proof')
+                elif state == 'primary':
+                    app.queue.count.return_value = 1
+                elif state == 'queue_error':
+                    app.queue.count.side_effect = OSError('Synthetic unreadable queue')
+                else:
+                    lane = Mock()
+                    lane.queue.count.return_value = 1
+                    setattr(app, state, lane)
+                ui.busy = ui.uncertain = False
+                ui.next_try = 0
+                ui.label = Mock()
+                ui.redemption = Mock()
+                with patch('collector.site_code_gui.threading.Thread') as thread:
+                    ui.submit()
+                    thread.assert_not_called()
+                ui.redemption.prepare.assert_not_called()
+                ui.redemption.redeem.assert_not_called()
+                app.store.save.assert_not_called()
+                app.store.clear.assert_not_called()
+                self.assertFalse(ui.busy)
+                self.assertIn('заблокирован', ui.label.config.call_args.kwargs['text'])
+
     def test_real_gui_callback_synthetic(self):
         from collector.site_code_gui import SiteCodeControls
         ui = SiteCodeControls.__new__(SiteCodeControls)
-        ui.app = Mock(busy=False, pairing=None, tailer=None, uploader=None, recovered_token=None, updates=None)
+        ui.app = Mock(busy=False, pairing=None, tailer=None, uploader=None, recovered_token=None, updates=None,
+                      expanded=None, legacy=None)
+        ui.app.store = Mock(spec=CredentialStore)
+        ui.app.store.load_proof.return_value = None
+        ui.app.queue.count.return_value = 0
+        ui.app.browser_outstanding.return_value = False
         ui.busy = ui.uncertain = False
         ui.next_try = 0
         ui.label = Mock()

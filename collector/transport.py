@@ -161,7 +161,7 @@ def expiry(value):
         raise ProtocolError('Invalid credential expiry') from None
 
 
-def validate_credentials(data):
+def validate_credentials(data, *, allow_expired=False):
     keys = {'access_token', 'token_type', 'scope', 'installation_id', 'expires_at', 'characters'}
     if not isinstance(data, dict) or set(data) != keys:
         raise ProtocolError('Invalid credentials response')
@@ -169,7 +169,7 @@ def validate_credentials(data):
         raise ProtocolError('Invalid credential scope')
     if not isinstance(data['installation_id'], str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', data['installation_id']):
         raise ProtocolError('Invalid installation')
-    if expiry(data['expires_at']) <= time.time():
+    if expiry(data['expires_at']) <= time.time() and not allow_expired:
         raise ProtocolError('Credentials expired; pair again')
     chars = data['characters']
     if not isinstance(chars, list) or not 1 <= len(chars) <= 32:

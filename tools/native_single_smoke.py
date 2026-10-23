@@ -132,7 +132,7 @@ class NativeSingleSmoke(unittest.TestCase):
             with closing(ExpandedQueue(root)) as legacy:
                 legacy.put('c'*64, event)
             sentinel = root/'credentials-v2.dpapi'; sentinel.write_bytes(b'synthetic encrypted sentinel')
-            def load(store):
+            def load(store, *, allow_expired=False):
                 return old if store.path == sentinel else current
             with closing(PendingQueue(root/'pending.sqlite3')) as queue, patch(
                 'collector.credentials.CredentialStore.load', load

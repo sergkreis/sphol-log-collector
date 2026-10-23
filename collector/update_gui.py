@@ -14,6 +14,9 @@ def active(app):
     # blocks replacement. Browser pairing remains blocked until durable recovery
     # exists for that protocol. Never relax in-flight ACK or unsaved-key guards.
     controls = getattr(app, 'site_codes', None)
+    recovery = getattr(app, 'browser_recovery', None)
+    if recovery and getattr(recovery, 'unsaved_result', None):
+        return True
     if controls and controls.busy is True:
         return True
     expanded = getattr(app, 'expanded', None)
