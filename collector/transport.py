@@ -113,7 +113,9 @@ class HTTPS:
                         or not isinstance(data['error'], str) or data['error'] not in ERROR_CODES.get(status, set())):
                     raise ProtocolError('Invalid redemption failure')
                 raise SiteCodeFailure(status, data['error'], retry_after(response.getheader('Retry-After', '')))
-            if status not in (200, 201, 400):
+            browser_expiry = (path == '/api/collector/v1/pairings/token'
+                              and payload.get('recovery') is True and status == 410)
+            if status not in (200, 201, 400) and not browser_expiry:
                 retry = response.getheader('Retry-After', '')
                 raise HTTPFailure(status, retry_after(retry))
             if response.getheader('Content-Type', '').split(';')[0].strip().lower() != 'application/json':

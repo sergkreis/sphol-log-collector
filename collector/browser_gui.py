@@ -2,7 +2,7 @@
 import time
 import ssl
 from types import SimpleNamespace
-from .browser_recovery import BrowserPendingStore, BrowserRecovery
+from .browser_recovery import BrowserPendingStore, BrowserRecovery, BrowserApprovalExpired
 from .transport import PAIR_URI, Uploader, valid_eve_authorize_url
 from .site_code_gui import blocked
 from .pairing_ux import active_url
@@ -51,7 +51,7 @@ class BrowserGUI:
     def open_browser(self):
         if self.browser_outstanding() and getattr(self, 'browser_paused', False) and not self.busy:
             # A lost redemption response must be retried before URL recovery.
-            self.retry_browser()
+            self.retry_browser(reopen=True)
             return
         if active_url(self.pairing):
             self.open_pairing_browser()
@@ -62,26 +62,32 @@ class BrowserGUI:
                 self.open_pairing_browser()
             elif not self.busy and not blocked(self):
                 self.pairing_notice('Восстанавливаю официальную ссылку EVE для сохранённого запроса. Новое устройство не создаётся; очередь и привязка не изменены.')
-                self.work('browser_recover_url', self.browser_recovery.recover_url)
+                self.retry_browser(reopen=True)
             return
         if not self.busy and not self.uploader:
             self.pair()
             return
         self.pairing_notice('Официальная ссылка EVE сейчас недоступна. Очередь и привязка не изменены; попробуйте позже или нажмите «Повторить привязку».')
 
-    def retry_browser(self):
+    def retry_browser(self, reopen=False):
         if self.busy or blocked(self):
             return
         self.browser_paused = False
         self.restore_browser()
         if self.pairing and getattr(self.pairing, 'durable', False):
-            self.work('browser_token', self.browser_recovery.redeem)
+            self.work('browser_reopen' if reopen else 'browser_token', self.browser_recovery.redeem)
 
     def browser_result(self, kind, result, error):
         if not kind.startswith('browser_'):
             return False
         self.busy = False
         self.redemption_pending = False
+        if kind == 'browser_reopen' and (isinstance(error, BrowserApprovalExpired)
+                                         or (error is None and result is None)):
+            # Probe first: a committed-but-lost credential wins over URL recovery.
+            # Unknown transport/protocol errors never authorize this transition.
+            self.work('browser_recover_url', self.browser_recovery.recover_url)
+            return True
         if error:
             self.browser_paused = True
             if kind == 'browser_start' and not self.browser_outstanding():

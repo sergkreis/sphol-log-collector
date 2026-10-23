@@ -63,7 +63,7 @@ class BrowserTests(unittest.TestCase):
         legacy = dict(claim); legacy.pop('browser_uri')
         app = App(legacy); app.restore_browser(); app.open_browser()
         self.assertIsNone(active_url(app.pairing))
-        app.work.assert_called_once_with('browser_recover_url', app.browser_recovery.recover_url)
+        app.work.assert_called_once_with('browser_reopen', app.browser_recovery.redeem)
         self.assertEqual(app.browser_pending.load(), legacy)
 
     def test_expired_pending_has_actionable_error_without_deletion(self):
@@ -82,7 +82,7 @@ class BrowserTests(unittest.TestCase):
                      browser_proof='c'*43, approval_expires=time.time()-1, browser_uri=OFFICIAL_EVE_URL)
         app = App(claim); app.restore_browser(); app.open_browser()
         self.assertIsNone(active_url(app.pairing))
-        app.work.assert_called_once_with('browser_recover_url', app.browser_recovery.recover_url)
+        app.work.assert_called_once_with('browser_reopen', app.browser_recovery.redeem)
         self.assertEqual(app.browser_pending.load(), claim)
 
     def test_binding_and_readback_preserve_claim(self):

@@ -11,6 +11,10 @@ from .diagnostics import atomic
 from .transport import HTTPS, PAIR_URI, ProtocolError, encode, decode, validate_credentials, valid_eve_authorize_url
 
 
+class BrowserApprovalExpired(ProtocolError):
+    """Explicit server expiry; only a same-claim recovery may follow a replay probe."""
+
+
 def validate_claim(value):
     base = {'device_secret', 'verifier', 'scope', 'recovery'}
     proof = base | {'browser_proof', 'approval_expires'}
@@ -134,13 +138,16 @@ class BrowserRecovery:
         status, data = self.http.post('/api/collector/v1/pairings/token', wire)
         if status == 400 and data in ({'error': 'authorization_pending'}, {'error': 'slow_down'}):
             return None
+        if status == 410 and data == {'error': 'expired_token'}:
+            raise BrowserApprovalExpired('Browser approval expired; claim retained')
         if status != 200:
             raise ProtocolError('Browser redemption uncertain; claim retained')
         result = validate_credentials(data)
         if result['scope'] != payload['scope'] or len(result['characters']) != 1:
             raise ProtocolError('Consent mismatch')
         old = payload.get('renewal')
-        if old is not None and any(result[k] != old[k] for k in ('installation_id', 'characters', 'scope')):
+        if old is not None and (any(result[k] != old[k] for k in ('installation_id', 'scope'))
+                or result['characters'][0]['id'] != old['characters'][0]['id']):
             raise ProtocolError('Renewal identity mismatch')
         self.unsaved_result = result
         existing = self.store.load_proof() if hasattr(self.store, 'load_proof') else self.store.load()

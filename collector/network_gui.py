@@ -174,7 +174,7 @@ class ConnectedApp(BrowserGUI, PairingUX, App):
             return
         self.busy = True
         attempt = getattr(self, 'pair_attempt', 0) if kind in ('pair', 'token') else None
-        if kind in ('token', 'browser_start', 'browser_token'):
+        if kind in ('token', 'browser_start', 'browser_token', 'browser_reopen'):
             # Redemption is irreversible: keep this worker authoritative until it ends.
             self.redemption_pending = True
         if attempt is not None:
