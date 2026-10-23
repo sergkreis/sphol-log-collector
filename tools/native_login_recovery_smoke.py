@@ -300,11 +300,53 @@ class NativeLoginRecovery(unittest.TestCase):
             app.modern.refresh(); app.window.update()
             self.assertTrue(app.modern.update_status_label.winfo_ismapped())
             self.assertIn('обновление не выполнено', app.modern.update_status_label.cget('text'))
-            for text in ('Обновить приложение', 'Помощь', '← Назад'):
+            self.assertEqual(app.window.minsize(), (560, 440))
+            self.assertEqual((app.window.winfo_width(), app.window.winfo_height()), (560, 440))
+            for text in ('Обновить приложение', 'Сменить персонажа', 'Помощь', '← Назад'):
                 button = visible_button(app.window, text)
                 self.assertGreaterEqual(button.winfo_height(), button.winfo_reqheight())
                 self.assertIs(app.window.winfo_containing(button.winfo_rootx()+button.winfo_width()//2,
                     button.winfo_rooty()+button.winfo_height()//2), button)
+            self.assertEqual(app.site_codes.pending.path.read_bytes(), original)
+            self.assertEqual(app.store.path.read_bytes(), saved)
+            self.assertEqual(list(app.queue.db.execute('SELECT * FROM pending')), rows)
+
+    def test_settings_overflow_keeps_footer_and_scroll_actions_reachable(self):
+        import tkinter.font as tkfont
+        with ExitStack() as stack:
+            app, credentials, saved, rows = self.fixture(stack, expired=True, pending=True)
+            original = app.site_codes.pending.path.read_bytes()
+            # Exercise larger platform/DPI metrics as well as multiline results.
+            # This is a geometry stress test, not a substitute for Windows CI.
+            scaling = app.window.tk.call('tk', 'scaling')
+            app.window.tk.call('tk', 'scaling', 1.75)
+            stack.callback(app.window.tk.call, 'tk', 'scaling', scaling)
+            app.modern.show('settings'); app.window.update()
+            back = visible_button(app.window, '← Назад')
+            self.assertGreaterEqual(tkfont.Font(font=back.cget('font')).metrics('linespace'), 24)
+            canvas = app.modern.update_status_label.master.master
+            from tkinter import Canvas
+            assert isinstance(canvas, Canvas)
+            for result in ('Синтетический результат\n' * 12, 'Синтетический результат'):
+                app.updates.label.configure(text=result)
+                app.modern.refresh(); app.window.update()
+                self.assertEqual(app.window.minsize(), (560, 440))
+                self.assertEqual((app.window.winfo_width(), app.window.winfo_height()), (560, 440))
+                self.assertGreaterEqual(back.winfo_height(), back.winfo_reqheight())
+                self.assertIs(app.window.winfo_containing(back.winfo_rootx()+back.winfo_width()//2,
+                    back.winfo_rooty()+back.winfo_height()//2), back)
+                canvas.yview_moveto(1); app.window.update()
+                help_button = visible_button(app.window, 'Помощь')
+                self.assertGreaterEqual(help_button.winfo_height(), help_button.winfo_reqheight())
+                self.assertIs(app.window.winfo_containing(help_button.winfo_rootx()+help_button.winfo_width()//2,
+                    help_button.winfo_rooty()+help_button.winfo_height()//2), help_button)
+                canvas.yview_moveto(0); app.window.update()
+                update = visible_button(app.window, 'Обновить приложение')
+                self.assertGreaterEqual(update.winfo_height(), update.winfo_reqheight())
+                self.assertIs(app.window.winfo_containing(update.winfo_rootx()+update.winfo_width()//2,
+                    update.winfo_rooty()+update.winfo_height()//2), update)
+            back.invoke(); app.window.update()
+            self.assertEqual(app.modern.screen, 'main')
             self.assertEqual(app.site_codes.pending.path.read_bytes(), original)
             self.assertEqual(app.store.path.read_bytes(), saved)
             self.assertEqual(list(app.queue.db.execute('SELECT * FROM pending')), rows)

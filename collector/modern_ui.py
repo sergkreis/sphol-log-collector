@@ -377,14 +377,39 @@ class ModernShell:
 
     def render_settings(self):
         card = self.card()
-        self.label(card, f'Версия {VERSION}', 14, MUTED, pady=(24, 8))
-        self.button(card, 'Обновить приложение', self.update_app, pady=(12, 7))
-        self.update_status_label = self.label(card, self.app.updates.label.cget('text'), 11, MUTED)
-        self.button(card, 'Сменить персонажа', self.change_character, pady=(7, 7))
-        self.button(card, 'Помощь', lambda: self.show('help'), pady=(7, 22))
-        self.label(card, 'В помощи — короткая инструкция.', 14, MUTED)
-        tk.Frame(card, bg=CARD_BG).pack(fill='both', expand=True)
-        self.link(card, '← Назад', lambda: self.show('main'))
+        # Pack the footer before variable-height content: Windows font metrics
+        # and a wrapped update result must never shrink or hide the Back action.
+        footer = tk.Frame(card, bg=CARD_BG)
+        footer.pack(side='bottom', fill='x')
+        self.link(footer, '← Назад', lambda: self.show('main'))
+        host = tk.Frame(card, bg=CARD_BG)
+        host.pack(fill='both', expand=True)
+        canvas = tk.Canvas(host, bg=CARD_BG, highlightthickness=0, width=1, height=1)
+        scrollbar = tk.Scrollbar(host, orient='vertical', command=canvas.yview)
+        scrollbar.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        content = tk.Frame(canvas, bg=CARD_BG)
+        item = canvas.create_window((0, 0), window=content, anchor='nw')
+        content.bind('<Configure>', lambda e: canvas.configure(scrollregion=canvas.bbox('all')))
+        def resize(event):
+            canvas.itemconfigure(item, width=event.width)
+            for child in content.winfo_children():
+                if isinstance(child, tk.Label):
+                    child.configure(wraplength=max(1, event.width - 4))
+        canvas.bind('<Configure>', resize)
+        self.label(content, f'Версия {VERSION}', 14, MUTED, pady=(12, 8))
+        self.button(content, 'Обновить приложение', self.update_app, pady=(12, 7))
+        self.update_status_label = self.label(content, self.app.updates.label.cget('text'), 11, MUTED)
+        self.button(content, 'Сменить персонажа', self.change_character, pady=(7, 7))
+        self.button(content, 'Помощь', lambda: self.show('help'), pady=(7, 10))
+        self.label(content, 'В помощи — короткая инструкция.', 14, MUTED)
+        # Local bindings are destroyed with this screen; do not replace the
+        # legacy window bindings or leave callbacks referring to a dead canvas.
+        for widget in (canvas, content, *content.winfo_children()):
+            widget.bind('<MouseWheel>', lambda e: canvas.yview_scroll(-1 if e.delta > 0 else 1, 'units'))
+            widget.bind('<Button-4>', lambda e: canvas.yview_scroll(-1, 'units'))
+            widget.bind('<Button-5>', lambda e: canvas.yview_scroll(1, 'units'))
 
     def render_help(self):
         card = self.card()
