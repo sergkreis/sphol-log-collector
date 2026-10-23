@@ -176,7 +176,7 @@ class NativeSiteCodeSmoke(unittest.TestCase):
             root.withdraw()
             path = Path(directory)
             app = SimpleNamespace(window=root, network_area=ttk.Frame(root), settings=ttk.Frame(root),
-                queue=SimpleNamespace(path=path/'pending.sqlite3'),
+                queue=SimpleNamespace(path=path/'pending.sqlite3', count=lambda: 0),
                 store=CredentialStore(path/'credentials.dpapi'), busy=False,
                 pairing=None, tailer=None, uploader=None, recovered_token=None,
                 updates=None, upload_enabled=False, pair=lambda: None,
